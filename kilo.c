@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
@@ -6,11 +7,21 @@
 
 struct termios orig_termios;
 
+/*
+ * Standard error handling exit
+*/
+void die(const char *s) {
+  perror(s);
+  exit(1);
+}
+
 /* 
  * Reset all terminal configs to their original state.
 */
 void disableRawMode(void) {
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
+    die("tcsetattr");
+  }
 }
 
 /* 
@@ -20,7 +31,9 @@ void disableRawMode(void) {
 */
 void enableRawMode(void) {
   // Store all initial terminal configs in global struct orig_termios.
-  tcgetattr(STDIN_FILENO, &orig_termios);
+  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
+    die("tcgetattr");
+  }
 
   // Ensure that disableRawMode is always called at program exit.
   atexit(disableRawMode);
@@ -80,7 +93,9 @@ void enableRawMode(void) {
   // TCSAFLUSH waits for all pending output to be written 
   // to the terminal, and also discards any input that 
   // hasn’t been read.
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);  
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+    die("tcsetattr");
+  }
 }
 
 int main(void) {
@@ -95,7 +110,11 @@ int main(void) {
     // Read that input from STDIN and write to c.
     // Note that read has been set to a 100ms / 0 byte timeout,
     // and will return "0" if no bytes are read before timing out.
-    read(STDIN_FILENO, &c, 1);
+    // NOTE: Cygwin returns a -1 EAGAIN when read timesout,
+    // so we have to check that separately for compatability.
+    if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
+      die("read");
+    }
 
     if(iscntrl(c)) {
       // iscntrl checks for non-printable ASCII control characters.
