@@ -73,10 +73,10 @@ int main(void) {
   while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
     if(iscntrl(c)) {
       // iscntrl checks for non-printable ASCII control characters.
-      printf("%d\n", c);
+      printf("%d\r\n", c);
     } else {
       // Print the ASCII code and the printable byte.
-      printf("%d ('%c')\n", c, c);
+      printf("%d ('%c')\r\n", c, c);
     }
   }
   
