@@ -114,35 +114,43 @@ void enableRawMode(void) {
   }
 }
 
+/*
+ * Reads a single key press from STDIN, validates read success, and returns it.
+*/
+char editorReadKey(void) {
+  int nread;
+  char c;
+  while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+    if (nread == -1 && errno != EAGAIN) {
+      die("read");
+    }
+  }
+  return c;
+}
+
+/*** input ***/
+
+/*
+ * Checks the most recently pressed key against special handling cases
+*/
+void editorProcessKeyPress(void) {
+  char c = editorReadKey();
+
+  switch(c) {
+    case CTRL_KEY('q'):
+      exit(0);
+      break;
+  }
+}
+
 /*** init ***/
 
 int main(void) {
   enableRawMode();
 
-  // Loop until user exits with an input of 'q'.
+  // Loop until user exits.
   while (1) {
-    // init a single char to hold one byte of input at a time 
-    // resetting every loop to clear the users input.
-    char c = '\0';
-    
-    // Read that input from STDIN and write to c.
-    // Note that read has been set to a 100ms / 0 byte timeout,
-    // and will return "0" if no bytes are read before timing out.
-    // NOTE: Cygwin returns a -1 EAGAIN when read timesout,
-    // so we have to check that separately for compatability.
-    if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) {
-      die("read");
-    }
-
-    if(iscntrl(c)) {
-      // iscntrl checks for non-printable ASCII control characters.
-      printf("%d\r\n", c);
-    } else {
-      // Print the ASCII code and the printable byte.
-      printf("%d ('%c')\r\n", c, c);
-    }
-
-    if (c == CTRL_KEY('q')) break;
+    editorProcessKeyPress();
   }
   
   return 0;
