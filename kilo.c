@@ -27,14 +27,29 @@ void enableRawMode(void) {
   
   // create a struct raw to hold updated terminal config
   struct termios raw = orig_termios;
+
+  // bitwise invert 'input' flags
+  // IXON controls the handling of XOFF/XON controls for output suppression
+  //  disabling it overrides <c-s>/<c-q> and allows them to be read
+  //  as ASCII 
+  // ICRNL controls the conversion of carriage returns into new lines
+  //   disabling it resets <c-m> and <enter> to 
+  //   ASCII 10 (\r) instead of ASCII 13 (\n)
+  raw.c_iflag &= ~(ICRNL | IXON)
   
-  // bitwise invert flags and store them in the 'local flags' key of raw
-  // the ECHO flag controls the output of characters. 
+  // bitwise invert 'local' flags
+  // ECHO controls the output of characters. 
   //  disabling it suppresses terminal output while typing, 
   //  like when entering a sudo password
-  // the ICANON flag controls canonical mode vs raw mode
+  // ICANON controls canonical mode vs raw mode
   //  disabling it handles inputs char by char instead of line by line
-  raw.c_lflag &= ~(ECHO | ICANON);
+  // ISIG controls the handling of signal inputs
+  //   disabling it overrides <c-c>/<c-y>/<c-z> and allows them to be read 
+  //   as ASCII
+  // IEXTEN controls the handling of input buffering controls
+  //   disabling it overrides <c-o>/<c-v> and allows them to be read
+  //   as ASCII
+  raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN)
 
   // persist the change:
   // TCSAFLUSH waits for all pending output to be written 
