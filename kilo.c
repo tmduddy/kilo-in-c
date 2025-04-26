@@ -52,8 +52,8 @@ void enableRawMode(void) {
   raw.c_oflag &= ~(OPOST);
 
   // Bitwise or to force enable character settings
-  // CS8 is a bitmask that sets the Character Size (CS) to 8
-  //   the article indicates this is likely already set
+  // CS8 is a bitmask that sets the Character Size (CS) to 8.
+  //   The article indicates this is likely already set.
   raw.c_cflag |= (CS8);
   
   // Bitwise invert 'local' flags.
@@ -70,6 +70,12 @@ void enableRawMode(void) {
   //   as ASCII.
   raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
 
+  // cc are the control character handling settings.
+  // VMIN sets the minimum # of bytes read() needs before returning.
+  // VTIME sets the max wait time before read() returns (in 1/10 sec.).
+  raw.c_cc[VMIN] = 0;
+  raw.c_cc[VTIME] = 1;
+
   // Persist the change:
   // TCSAFLUSH waits for all pending output to be written 
   // to the terminal, and also discards any input that 
@@ -80,10 +86,17 @@ void enableRawMode(void) {
 int main(void) {
   enableRawMode();
 
-  // Infinitely read from STDIN, saving typed character in char c
-  // until a 'q' is entered.
-  char c;
-  while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
+  // Loop until user exits with an input of 'q'.
+  while (1) {
+    // init a single char to hold one byte of input at a time 
+    // resetting every loop to clear the users input.
+    char c = '\0';
+    
+    // Read that input from STDIN and write to c.
+    // Note that read has been set to a 100ms / 0 byte timeout,
+    // and will return "0" if no bytes are read before timing out.
+    read(STDIN_FILENO, &c, 1);
+
     if(iscntrl(c)) {
       // iscntrl checks for non-printable ASCII control characters.
       printf("%d\r\n", c);
@@ -91,6 +104,8 @@ int main(void) {
       // Print the ASCII code and the printable byte.
       printf("%d ('%c')\r\n", c, c);
     }
+
+    if (c == 'q') break;
   }
   
   return 0;
