@@ -7,6 +7,16 @@
 #include <termios.h>
 #include <unistd.h>
 
+/*** defines ***/
+
+// Bitwise AND with the input key (in ASCII) and 0001 1111
+// to cast the first 3 bits to 0, which is how ASCII maps
+// characters and their CTRL+<character> variants
+// q in ASCII     = 113 = 0111 0001
+// <c-q> in ASCII =  17 = 0001 0001
+// q & 0x1f = 0001 0001 
+#define CTRL_KEY(key) ((key) & 0x1f)
+
 /*** data ***/
 
 struct termios orig_termios;
@@ -132,7 +142,7 @@ int main(void) {
       printf("%d ('%c')\r\n", c, c);
     }
 
-    if (c == 'q') break;
+    if (c == CTRL_KEY('q')) break;
   }
   
   return 0;
