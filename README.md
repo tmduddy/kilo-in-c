@@ -1,2 +1,2 @@
 # kilo-in-c
-following a tutorial article to try and learn some C basics - https://viewsourcecode.org/snaptoken/kilo/
+following a [tutorial article](https://viewsourcecode.org/snaptoken/kilo/) to try and learn some C basics
