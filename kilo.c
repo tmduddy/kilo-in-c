@@ -7,51 +7,57 @@
 struct termios orig_termios;
 
 /* 
- * reset all terminal configs to their original state
+ * Reset all terminal configs to their original state.
 */
 void disableRawMode(void) {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
 }
 
 /* 
- * Edit terminal settings to enable "raw" mode
+ * Edit terminal settings to enable "raw" mode,
  * where raw mode means inputs are "submitted" after every
- * character, not when the user hits enter
+ * character, not when the user hits enter.
 */
 void enableRawMode(void) {
-  // store all initial terminal configs in global struct orig_termios
+  // Store all initial terminal configs in global struct orig_termios.
   tcgetattr(STDIN_FILENO, &orig_termios);
 
-  // ensure that disableRawMode is always called at program exit 
+  // Ensure that disableRawMode is always called at program exit.
   atexit(disableRawMode);
   
-  // create a struct raw to hold updated terminal config
+  // Create a struct raw to hold updated terminal config.
   struct termios raw = orig_termios;
 
-  // bitwise invert 'input' flags
-  // IXON controls the handling of XOFF/XON controls for output suppression
-  //  disabling it overrides <c-s>/<c-q> and allows them to be read
-  //  as ASCII 
-  // ICRNL controls the conversion of carriage returns into new lines
-  //   disabling it resets <c-m> and <enter> to 
-  //   ASCII 10 (\r) instead of ASCII 13 (\n)
-  raw.c_iflag &= ~(ICRNL | IXON)
-  
-  // bitwise invert 'local' flags
-  // ECHO controls the output of characters. 
-  //  disabling it suppresses terminal output while typing, 
-  //  like when entering a sudo password
-  // ICANON controls canonical mode vs raw mode
-  //  disabling it handles inputs char by char instead of line by line
-  // ISIG controls the handling of signal inputs
-  //   disabling it overrides <c-c>/<c-y>/<c-z> and allows them to be read 
-  //   as ASCII
-  // IEXTEN controls the handling of input buffering controls
-  //   disabling it overrides <c-o>/<c-v> and allows them to be read
-  //   as ASCII
-  raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN)
+  // Bitwise invert 'input' flags.
+  // IXON controls the handling of XOFF/XON controls for output suppression.
+  //   Disabling it overrides <c-s>/<c-q> and allows them to be read
+  //   as ASCII.
+  // ICRNL controls the conversion of carriage returns into new lines.
+  //   Disabling it resets <c-m> and <enter> to 
+  //   ASCII 10 (\r) instead of ASCII 13 (\n).
+  raw.c_iflag &= ~(ICRNL | IXON);
 
-  // persist the change:
+  // Bitwise invert 'output' flags.
+  // OPOST controls the conversion of new lines (\n) into NL returns (\n\r).
+  //   Disabling it allows/requires printing to manually specify new lines
+  //   and returns separately.
+  raw.c_oflag &= ~(OPOST);
+  
+  // Bitwise invert 'local' flags.
+  // ECHO controls the output of characters. 
+  //   Disabling it suppresses terminal output while typing, 
+  //   like when entering a sudo password.
+  // ICANON controls canonical mode vs raw mode.
+  //   Disabling it handles inputs char by char instead of line by line.
+  // ISIG controls the handling of signal inputs.
+  //   Disabling it overrides <c-c>/<c-y>/<c-z> and allows them to be read 
+  //   as ASCII.
+  // IEXTEN controls the handling of input buffering controls.
+  //   Disabling it overrides <c-o>/<c-v> and allows them to be read
+  //   as ASCII.
+  raw.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
+
+  // Persist the change:
   // TCSAFLUSH waits for all pending output to be written 
   // to the terminal, and also discards any input that 
   // hasn’t been read.
@@ -61,16 +67,15 @@ void enableRawMode(void) {
 int main(void) {
   enableRawMode();
 
-  // infinitely read from STDIN, saving typed character in char c
-  // until a 'q' is entered
+  // Infinitely read from STDIN, saving typed character in char c
+  // until a 'q' is entered.
   char c;
   while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
     if(iscntrl(c)) {
-      // iscntrl = non printable ASCII control char
-      // so print ASCII only
+      // iscntrl checks for non-printable ASCII control characters.
       printf("%d\n", c);
     } else {
-      // print the ASCII code and the printable byte
+      // Print the ASCII code and the printable byte.
       printf("%d ('%c')\n", c, c);
     }
   }
