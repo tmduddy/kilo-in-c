@@ -29,19 +29,32 @@ void enableRawMode(void) {
   struct termios raw = orig_termios;
 
   // Bitwise invert 'input' flags.
-  // IXON controls the handling of XOFF/XON controls for output suppression.
-  //   Disabling it overrides <c-s>/<c-q> and allows them to be read
-  //   as ASCII.
+  // BRKINT (maybe optional) controls the handling of Break conditions
+  //   Disabling it disables Break conditions sending SIGINT.
+  //   (not sure what those are if not <c-c>, which we already handled)
   // ICRNL controls the conversion of carriage returns into new lines.
   //   Disabling it resets <c-m> and <enter> to 
   //   ASCII 10 (\r) instead of ASCII 13 (\n).
-  raw.c_iflag &= ~(ICRNL | IXON);
+  // INPCK (optional) controls "parity handling.
+  //   The article indicates this isn't neccesary on modern terminal 
+  //   emulators, just a holdover of tradition.
+  // ISTRIP strips the 8th bit of every byte (casts to 0)
+  //   The article indicates this is surely already enabled on a modern term.
+  // IXON controls the handling of XOFF/XON controls for output suppression.
+  //   Disabling it overrides <c-s>/<c-q> and allows them to be read
+  //   as ASCII.
+  raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
 
   // Bitwise invert 'output' flags.
   // OPOST controls the conversion of new lines (\n) into NL returns (\n\r).
   //   Disabling it allows/requires printing to manually specify new lines
   //   and returns separately.
   raw.c_oflag &= ~(OPOST);
+
+  // Bitwise or to force enable character settings
+  // CS8 is a bitmask that sets the Character Size (CS) to 8
+  //   the article indicates this is likely already set
+  raw.c_cflag |= (CS8);
   
   // Bitwise invert 'local' flags.
   // ECHO controls the output of characters. 
