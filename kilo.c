@@ -1,3 +1,5 @@
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
@@ -47,7 +49,16 @@ int main(void) {
   // infinitely read from STDIN, saving typed character in char c
   // until a 'q' is entered
   char c;
-  while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q');
+  while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q') {
+    if(iscntrl(c)) {
+      // iscntrl = non printable ASCII control char
+      // so print ASCII only
+      printf("%d\n", c);
+    } else {
+      // print the ASCII code and the printable byte
+      printf("%d ('%c')\n", c, c);
+    }
+  }
   
   return 0;
 }
