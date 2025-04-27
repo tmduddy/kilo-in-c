@@ -35,3 +35,4 @@ note: some of these things may be coming later on in the tutorial, but I'm listi
 - [x] configurable row/column counts
 - [ ] config file support
 - [ ] use different makefile command for prod with fewer flags 
+- [ ] refactor out into different sections
