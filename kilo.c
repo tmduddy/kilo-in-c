@@ -255,14 +255,18 @@ void abFree(struct abuf *ab) {
 /*** output ***/
 
 /*
- * Draw a column of ~ to distinguish rows
+ * Draw a column of ~ to distinguish rows.
+ * [K - Erase In Line, using default arg 0 to erase to the right of the cursor.
  */
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y=0; y < E.screenrows; y++) {
     abAppend(ab, "~", 1);
 
-    // Don't newline the last row
+    // Clear to the right of the cursor.
+    abAppend(ab, "\x1b[K", 3);
+
+    // Don't newline the last row.
     if (y < E.screenrows - 1) {
       abAppend(ab, "\r\n", 2);
     }
