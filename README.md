@@ -17,9 +17,6 @@ and then the program can be run with
 ./kilo
 ```
 
-Soon I'll learn more about `make` files and set up a different command for compiling for production (fewer flags).
-
-
 ### testing:
 There are no real tests as such (yet), but you can still validate different parts.
 
@@ -34,5 +31,7 @@ both of which should throw errors.
 
 
 ### Future Work
-[ ] configurable row/column counts
-[ ] config file support
+note: some of these things may be coming later on in the tutorial, but I'm listing these ideas as I have them.
+- [x] configurable row/column counts
+- [ ] config file support
+- [ ] use different makefile command for prod with fewer flags 

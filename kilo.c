@@ -274,12 +274,18 @@ void editorDrawRows(struct abuf *ab) {
  * Note: this function takes advantage of VT100 Escape Sequences.
  *   [J - Erase In Display (using 2 to set erase entire display.
  *   [H - Reposition Cursor (using default arg 1 to send the cursor to col 1).
+ *   [?l / [?h - toggle off/on terminal "modes" (using 25 for cursor vis).
  */
 void editorRefreshScreen(void) {
   struct abuf ab = ABUF_INIT;
 
+  // Hide the cursor.
+  abAppend(&ab, "\x1b[?25l", 6);
+  // Clear the display and reset cursor position.
   abAppend(&ab, "\x1b[2J", 4);
   abAppend(&ab, "\x1b[H", 3);
+  // Un-hide the cursor.
+  abAppend(&ab, "\x1b[?25h", 6);
 
   editorDrawRows(&ab);
   abAppend(&ab, "\x1b[H", 3);
