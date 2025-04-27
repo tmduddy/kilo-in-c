@@ -35,15 +35,14 @@ I've decicded to use LLVM's `clang-format` for this project, following these ins
 - Downloaded the latest Apple Silicon release binary from their [Github](https://github.com/llvm/llvm-project/releases/tag/llvmorg-18.1.8)
 - saved the tar file in `~/clang-format/`
 - unwrapped it to `~/clang-format/clang-format/` with `tar xvfJ clang-format/clang+llvm-18.1.8-arm64-apple-macos11.tar.xz -C ./clang-format`
-- added a symlink to /usr/local/bin/clang-format with `sudo ln -s $(pwd)/$(find clang-format | grep bin/clang-format$) /usr/local/bin/clang-format`
+- nguage specific settings
+" --------------------------
+" Enable auto formatting from the clang-format-vim plugin
+autocmd FileType c ClangFormatAutoEnable
+added a symlink to /usr/local/bin/clang-format with `sudo ln -s $(pwd)/$(find clang-format | grep bin/clang-format$) /usr/local/bin/clang-format`
 - verified installation with `clang-format --version`
 
 Note: I initially tried this the "easy way" with `brew install clang-format`, which works, but didn't expose the `clang-format.py` file required for the Vim integration anywhere I could find, so I deleted that and re-did it from scratch like this.
-
-With `clang-format` installed, I followed the instructions on their [docs page](https://clang.llvm.org/docs/ClangFormat.html) to generate an LLVM standard format file in the project root
-```shell
-clang-format -style=llvm -dump-config > .clang-format
-```
 
 And then was finally able to add the auto-save function to my `~/.vimrc` like:
 ```vim
@@ -60,6 +59,21 @@ autocmd BufWritePre *.h,*.cc,*.cpp,*.c call Formatonsave()
 ```
 
 where the path to `clang-format.py` might be specific to my machine.
+
+However I was getting repeated python errors, and seeing that perhaps a lot more tinkering would be required to get this to work with a modern, python3 enabled vim. 
+
+After much trial and tribulation I installed the clang-format-vim plugin from rhysd [here](https://github.com/rhysd/vim-clang-format/) and was able to get this to work as an autoformatter:
+
+```vim
+" --------------------------
+" language specific settings
+" --------------------------
+" Enable auto formatting from the clang-format-vim plugin
+g:clang_format#code_style='llvm'
+autocmd FileType c ClangFormatAutoEnable
+```
+
+and finally now the code formats on save
 
 
 ## Future Work
