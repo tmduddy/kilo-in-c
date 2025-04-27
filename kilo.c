@@ -19,8 +19,9 @@
 // q & 0x1f = 0001 0001 = <c-q>
 #define CTRL_KEY(key) ((key) & 0x1f)
 
-/*** data ***/
+#define KILO_VERSION "0.0.1"
 
+/*** data ***/
 
 struct editorConfig {
   int screenrows;
@@ -261,7 +262,30 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y=0; y < E.screenrows; y++) {
-    abAppend(ab, "~", 1);
+    if (y == E.screenrows / 3) {
+      // Print welcome message.
+      char welcome[80];
+      int welcomelen = snprintf(welcome, sizeof(welcome),
+          "Kilo editor --- version %s", KILO_VERSION);
+      if (welcomelen > E.screencols) {
+        welcomelen = E.screencols;
+      }
+      // Center the message.
+      int padding = (E.screencols - welcomelen) / 2;
+      if (padding) {
+        // The first padding character should be a ~
+        abAppend(ab, "~", 1);
+        padding--;
+      }
+      // The rest of the padding should be spaces
+      while (padding--) {
+        abAppend(ab, " ", 1);
+      }
+
+      abAppend(ab, welcome, welcomelen);
+    } else {
+      abAppend(ab, "~", 1);
+    }
 
     // Clear to the right of the cursor.
     abAppend(ab, "\x1b[K", 3);
@@ -285,15 +309,19 @@ void editorRefreshScreen(void) {
 
   // Hide the cursor.
   abAppend(&ab, "\x1b[?25l", 6);
+  
   // Clear the display and reset cursor position.
   abAppend(&ab, "\x1b[2J", 4);
   abAppend(&ab, "\x1b[H", 3);
+  
   // Un-hide the cursor.
   abAppend(&ab, "\x1b[?25h", 6);
 
   editorDrawRows(&ab);
+  // Reset cursor position.
   abAppend(&ab, "\x1b[H", 3);
 
+  // Display full contents of ab and free the memory.
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
 }
