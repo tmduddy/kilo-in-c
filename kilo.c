@@ -12,6 +12,14 @@
 
 /*** defines ***/
 
+// Required to allow getline() to succeed cross-platform.
+// While it succeeded for me on MacOS Sequoia during development,
+// I'm not sure that's really cross platform without these additional
+// definitions.
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 // Bitwise AND of the input key (in ASCII) with 0001 1111
 // to cast the first 3 bits to 0, which is how ASCII maps
 // characters and their CTRL+<character> variants.
@@ -298,16 +306,42 @@ int getWindowSize(int *rows, int *cols) {
  * Open and read a file from disk (eventually).
  * Currently this only supports hard coding a single editor line
  */
-void editorOpen(void) {
-  char *line = "Hello, world!";
-  ssize_t linelen = 13;
+void editorOpen(char *filename) {
+  // Open a file by name.
+  FILE *fp = fopen(filename, "r");
+  if (!fp) {
+    die("fopen");
+  }
 
-  E.row.size = linelen;
-  E.row.chars = malloc(linelen + 1);
-  memcpy(E.row.chars, line, linelen);
-  E.row.chars[linelen] = '\0';
-  E.numrows = 1; 
+  // Load one line from the file.
+  char *line = NULL;
+  size_t linecap = 0;
+  ssize_t linelen;
+  // When getline receives a NULL *line and 0 line capacity arg, it will 
+  // automatically allocate the correct amount of memory and store the 
+  // correct *line pointer and capacity, returning the length;
+  linelen = getline(&line, &linecap, fp);
 
+  // A linelen of -1 indicates the end of the file.
+  if (linelen != -1) {
+    // Strip off new lines and carriage returns.
+    while (
+        linelen > 0 && 
+        (line[linelen - 1] == '\r' || line[linelen - 1] == '\n')
+      ) {
+      linelen--;
+  }
+    // Copy the read line into the editor row.
+    E.row.size = linelen;
+    E.row.chars = malloc(linelen + 1);
+    memcpy(E.row.chars, line, linelen);
+    E.row.chars[linelen] = '\0';
+    E.numrows = 1; 
+  }
+
+  // Re-free the memory allocated to the line and close the file.
+  free(line);
+  fclose(fp);
 }
 
 /*** append buffer ***/
@@ -363,8 +397,8 @@ void editorDrawRows(struct abuf *ab) {
   int y;
   for (y=0; y < E.screenrows; y++) {
     if (y >= E.numrows) {
-      // Generate a welcome message.
-      if (y == E.screenrows / 3) {
+      // Generate a welcome message if no user rows are present.
+      if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
         int welcomelen = snprintf(welcome, sizeof(welcome),
             "Kilo editor --- version %s", KILO_VERSION);
@@ -519,10 +553,13 @@ void initEditor(void) {
   if(getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
   enableRawMode();
   initEditor();
-  editorOpen();
+  // If a file name is provided, pass it to editor open.
+  if (argc >= 2) {
+    editorOpen(argv[1]);
+  }
 
   // Loop until user exits.
   while (1) {
