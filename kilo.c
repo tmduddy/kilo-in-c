@@ -31,26 +31,9 @@ struct editorConfig E;
 
 /*** terminal ***/
 
-/* Get the current terminal window size */
-int getWindowSize(int *rows, int *cols) {
-  struct winsize ws;
-
-  // Fetch the current window size from ioctl
-  if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-    // Feturn an error if the fetch fails or the column is 0,
-    // where 0 is another error state from sys/ioctl
-    return -1;
-  } else {
-    // load the current column and row sizes into the input args
-    *cols = ws.ws_col;
-    *rows = ws.ws_row;
-    return 0;
-  }
-}
-
 /*
  * Standard error handling exit
-*/
+ */
 void die(const char *s) {
   // Clear the screen.
   write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -63,7 +46,7 @@ void die(const char *s) {
 
 /* 
  * Reset all terminal configs to their original state.
-*/
+ */
 void disableRawMode(void) {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
     die("tcsetattr");
@@ -74,7 +57,7 @@ void disableRawMode(void) {
  * Edit terminal settings to enable "raw" mode,
  * where raw mode means inputs are "submitted" after every
  * character, not when the user hits enter.
-*/
+ */
 void enableRawMode(void) {
   // Store all initial terminal configs in global struct orig_termios.
   if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
@@ -146,7 +129,7 @@ void enableRawMode(void) {
 
 /*
  * Reads a single key press from STDIN, validates read success, and returns it.
-*/
+ */
 char editorReadKey(void) {
   int nread;
   char c;
@@ -158,11 +141,78 @@ char editorReadKey(void) {
   return c;
 }
 
+/*
+ * Get the current cursor position
+ * [n gets device information, and arg 6 returns the cursor position
+ * and reports back in the form:
+ *   \x1b[<row>;<col>R
+ */
+int getCursorPosition(int *rows, int *cols) {
+  char buf[32];
+  unsigned int i = 0;
+  
+  // Send the escape code to return the cursor position
+  if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
+    return -1;
+  }
+
+  while (i < sizeof(buf) - 1) {
+    if (read(STDIN_FILENO, &buf[i], 1) != 1) {
+      // Break if we reach the end.
+      break;
+    }
+    if (buf[i] == 'R') {
+      // Break if we read an 'R'.
+      break;
+    }
+    i++;
+  }
+
+  // printf expects strings to end with '\0' so we manually insert that
+  buf[i] = '\0';
+
+  // Verify that we're reading an escape sequence.
+  if (buf[0] != '\x1b' || buf[1] != '[') {
+    return -1;
+  }
+
+  if (sscanf(&buf[2], "%d;%d", rows, cols) != 2) {
+    return -1;
+  }
+
+  return 0;
+}
+
+/* 
+ * Get the current terminal window size .
+ * [C sends the cursor forward (999 cols in this case)
+ * [B sends the cursor down (998 rows in this case)
+ */
+int getWindowSize(int *rows, int *cols) {
+  struct winsize ws;
+
+  // Fetch the current window size from ioctl.
+  if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    // If that fails to read, or returns a col of 0, fall back on 
+    // moving the cursor position to the bottom right corner and using
+    // getCursorPosition to load the current position to rows + cols.
+    if(write(STDOUT_FILENO, "\x1b[999C\x1b[998B", 12) != 12) {
+      return -1;
+    }
+    return getCursorPosition(rows, cols);
+  } else {
+    // load the current column and row sizes into the input args
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return 0;
+  }
+}
+
 /*** output ***/
 
 /*
  * Draw a column of ~ to distinguish rows
-*/
+ */
 void editorDrawRows(void) {
   int y;
   for (y=0; y < E.screenrows; y++) {
@@ -175,7 +225,7 @@ void editorDrawRows(void) {
  * Note: this function takes advantage of VT100 Escape Sequences.
  *   [J - Erase In Display (using 2 to set erase entire display.
  *   [H - Reposition Cursor (using default arg 1 to send the cursor to col 1).
-*/
+ */
 void editorRefreshScreen(void) {
   write(STDOUT_FILENO, "\x1b[2J", 4);
   write(STDOUT_FILENO, "\x1b[H", 3);
@@ -188,7 +238,7 @@ void editorRefreshScreen(void) {
 
 /*
  * Checks the most recently pressed key against special handling cases
-*/
+ */
 void editorProcessKeyPress(void) {
   char c = editorReadKey();
 
