@@ -24,6 +24,8 @@
 /*** data ***/
 
 struct editorConfig {
+  int cx;
+  int cy;
   int screenrows;
   int screencols;
   struct termios orig_termios;
@@ -262,8 +264,8 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y=0; y < E.screenrows; y++) {
+    // Generate a welcome message.
     if (y == E.screenrows / 3) {
-      // Print welcome message.
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome),
           "Kilo editor --- version %s", KILO_VERSION);
@@ -282,6 +284,7 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, " ", 1);
       }
 
+      // add the welcome message to the buffer
       abAppend(ab, welcome, welcomelen);
     } else {
       abAppend(ab, "~", 1);
@@ -301,25 +304,25 @@ void editorDrawRows(struct abuf *ab) {
  * Clears the screen and repositions the cursor.
  * Note: this function takes advantage of VT100 Escape Sequences.
  *   [J - Erase In Display (using 2 to set erase entire display.
- *   [H - Reposition Cursor (using default arg 1 to send the cursor to col 1).
+ *   [H - Reposition Cursor
  *   [?l / [?h - toggle off/on terminal "modes" (using 25 for cursor vis).
  */
 void editorRefreshScreen(void) {
   struct abuf ab = ABUF_INIT;
 
-  // Hide the cursor.
-  abAppend(&ab, "\x1b[?25l", 6);
-  
-  // Clear the display and reset cursor position.
-  abAppend(&ab, "\x1b[2J", 4);
+  // Hide the cursor and reset its position
+  abAppend(&ab, "\x1b[?25l", 6); 
   abAppend(&ab, "\x1b[H", 3);
+  
+  editorDrawRows(&ab);
+
+  // Move the cursor to the stored X, Y position.
+  char buf[32];
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  abAppend(&ab, buf, strlen(buf));
   
   // Un-hide the cursor.
   abAppend(&ab, "\x1b[?25h", 6);
-
-  editorDrawRows(&ab);
-  // Reset cursor position.
-  abAppend(&ab, "\x1b[H", 3);
 
   // Display full contents of ab and free the memory.
   write(STDOUT_FILENO, ab.b, ab.len);
@@ -349,6 +352,9 @@ void editorProcessKeyPress(void) {
 /*** init ***/
 
 void initEditor(void) {
+  // Set the cursor position to (0, 0).
+  E.cx = 0;
+  E.cy = 0;
   if(getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
