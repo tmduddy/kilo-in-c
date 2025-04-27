@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -225,6 +226,31 @@ struct abuf {
  * Creates a new, empty appendable buffer
  */
 #define ABUF_INIT {NULL, 0}
+
+/*
+ * Append a new string, s, with length len to struct abuf ab
+ */
+void abAppend(struct abuf *ab, const char *s, int len) {
+  // Move ab to a new memory block with enough room for the current length
+  // plus the new length (or extend the current block if possible).
+  char *new = realloc(ab->b, ab->len + len);
+
+  if (new == NULL) {
+    return;
+  }
+
+  // Append s to the end of ab and update ab's pointers accordingly
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+
+/*
+ * Simple deallocator for our dynamic length buffer.
+ */
+void abFree(struct abuf *ab) {
+  free(ab->b);
+}
 
 /*** output ***/
 
