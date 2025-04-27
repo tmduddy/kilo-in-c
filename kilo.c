@@ -37,11 +37,21 @@ enum editorKey {
 
 /*** data ***/
 
+/* 
+ * hold a single row of editor text
+ */
+typedef struct erow {
+  int size;
+  char *chars;
+} erow;
+
 struct editorConfig {
   int cx;
   int cy;
   int screenrows;
   int screencols;
+  int numrows;
+  erow row;
   struct termios orig_termios;
 };
 
@@ -474,6 +484,10 @@ void initEditor(void) {
   // Set the cursor position to (0, 0).
   E.cx = 0;
   E.cy = 0;
+  
+  // Start with no text rows.
+  E.numrows = 0;
+
   if(getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
 }
 
