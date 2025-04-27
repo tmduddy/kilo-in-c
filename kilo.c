@@ -4,24 +4,49 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 /*** defines ***/
 
-// Bitwise AND with the input key (in ASCII) and 0001 1111
+// Bitwise AND of the input key (in ASCII) with 0001 1111
 // to cast the first 3 bits to 0, which is how ASCII maps
-// characters and their CTRL+<character> variants
+// characters and their CTRL+<character> variants.
 // q in ASCII     = 113 = 0111 0001
 // <c-q> in ASCII =  17 = 0001 0001
-// q & 0x1f = 0001 0001 
+// q & 0x1f = 0001 0001 = <c-q>
 #define CTRL_KEY(key) ((key) & 0x1f)
 
 /*** data ***/
 
-struct termios orig_termios;
+
+struct editorConfig {
+  int screenrows;
+  int screencols;
+  struct termios orig_termios;
+};
+
+struct editorConfig E;
 
 /*** terminal ***/
+
+/* Get the current terminal window size */
+int getWindowSize(int *rows, int *cols) {
+  struct winsize ws;
+
+  // Fetch the current window size from ioctl
+  if(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    // Feturn an error if the fetch fails or the column is 0,
+    // where 0 is another error state from sys/ioctl
+    return -1;
+  } else {
+    // load the current column and row sizes into the input args
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return 0;
+  }
+}
 
 /*
  * Standard error handling exit
@@ -40,7 +65,7 @@ void die(const char *s) {
  * Reset all terminal configs to their original state.
 */
 void disableRawMode(void) {
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
     die("tcsetattr");
   }
 }
@@ -52,7 +77,7 @@ void disableRawMode(void) {
 */
 void enableRawMode(void) {
   // Store all initial terminal configs in global struct orig_termios.
-  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) {
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
     die("tcgetattr");
   }
 
@@ -60,7 +85,7 @@ void enableRawMode(void) {
   atexit(disableRawMode);
   
   // Create a struct raw to hold updated terminal config.
-  struct termios raw = orig_termios;
+  struct termios raw = E.orig_termios;
 
   // Bitwise invert 'input' flags.
   // BRKINT (maybe optional) controls the handling of Break conditions
@@ -140,7 +165,7 @@ char editorReadKey(void) {
 */
 void editorDrawRows(void) {
   int y;
-  for (y=0; y < 24; y++) {
+  for (y=0; y < E.screenrows; y++) {
     write(STDOUT_FILENO, "~\r\n", 3);
   }
 }
@@ -181,8 +206,13 @@ void editorProcessKeyPress(void) {
 
 /*** init ***/
 
+void initEditor(void) {
+  if(getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+}
+
 int main(void) {
   enableRawMode();
+  initEditor();
 
   // Loop until user exits.
   while (1) {
