@@ -27,6 +27,11 @@ struct termios orig_termios;
  * Standard error handling exit
 */
 void die(const char *s) {
+  // Clear the screen.
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  // Print the error.
   perror(s);
   exit(1);
 }
@@ -128,6 +133,32 @@ char editorReadKey(void) {
   return c;
 }
 
+/*** output ***/
+
+/*
+ * Draw a column of ~ to distinguish rows
+*/
+void editorDrawRows(void) {
+  int y;
+  for (y=0; y < 24; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
+
+/*
+ * Clears the screen and repositions the cursor.
+ * Note: this function takes advantage of VT100 Escape Sequences.
+ *   [J - Erase In Display (using 2 to set erase entire display.
+ *   [H - Reposition Cursor (using default arg 1 to send the cursor to col 1).
+*/
+void editorRefreshScreen(void) {
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  editorDrawRows();
+  write(STDOUT_FILENO, "\x1b[H", 3);
+}
+
 /*** input ***/
 
 /*
@@ -138,6 +169,11 @@ void editorProcessKeyPress(void) {
 
   switch(c) {
     case CTRL_KEY('q'):
+      // Clear the screen.
+      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[H", 3);
+     
+      // Exit with success code. 
       exit(0);
       break;
   }
@@ -150,6 +186,7 @@ int main(void) {
 
   // Loop until user exits.
   while (1) {
+    editorRefreshScreen();
     editorProcessKeyPress();
   }
   
