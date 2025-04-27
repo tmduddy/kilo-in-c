@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -291,6 +292,24 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** file i/o ***/
+
+/*
+ * Open and read a file from disk (eventually).
+ * Currently this only supports hard coding a single editor line
+ */
+void editorOpen(void) {
+  char *line = "Hello, world!";
+  ssize_t linelen = 13;
+
+  E.row.size = linelen;
+  E.row.chars = malloc(linelen + 1);
+  memcpy(E.row.chars, line, linelen);
+  E.row.chars[linelen] = '\0';
+  E.numrows = 1; 
+
+}
+
 /*** append buffer ***/
 
 /*
@@ -343,30 +362,39 @@ void abFree(struct abuf *ab) {
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y=0; y < E.screenrows; y++) {
-    // Generate a welcome message.
-    if (y == E.screenrows / 3) {
-      char welcome[80];
-      int welcomelen = snprintf(welcome, sizeof(welcome),
-          "Kilo editor --- version %s", KILO_VERSION);
-      if (welcomelen > E.screencols) {
-        welcomelen = E.screencols;
-      }
-      // Center the message.
-      int padding = (E.screencols - welcomelen) / 2;
-      if (padding) {
-        // The first padding character should be a ~
-        abAppend(ab, "~", 1);
-        padding--;
-      }
-      // The rest of the padding should be spaces
-      while (padding--) {
-        abAppend(ab, " ", 1);
-      }
+    if (y >= E.numrows) {
+      // Generate a welcome message.
+      if (y == E.screenrows / 3) {
+        char welcome[80];
+        int welcomelen = snprintf(welcome, sizeof(welcome),
+            "Kilo editor --- version %s", KILO_VERSION);
+        if (welcomelen > E.screencols) {
+          welcomelen = E.screencols;
+        }
+        // Center the message.
+        int padding = (E.screencols - welcomelen) / 2;
+        if (padding) {
+          // The first padding character should be a ~
+          abAppend(ab, "~", 1);
+          padding--;
+        }
+        // The rest of the padding should be spaces
+        while (padding--) {
+          abAppend(ab, " ", 1);
+        }
 
-      // add the welcome message to the buffer
-      abAppend(ab, welcome, welcomelen);
+        // add the welcome message to the buffer
+        abAppend(ab, welcome, welcomelen);
+      } else {
+        abAppend(ab, "~", 1);
+      }
     } else {
-      abAppend(ab, "~", 1);
+      // truncate the text to the terminal window
+      int len = E.row.size;
+      if (len > E.screencols) {
+        len = E.screencols;
+      }
+      abAppend(ab, E.row.chars, len);
     }
 
     // Clear to the right of the cursor.
@@ -494,6 +522,7 @@ void initEditor(void) {
 int main(void) {
   enableRawMode();
   initEditor();
+  editorOpen();
 
   // Loop until user exits.
   while (1) {
