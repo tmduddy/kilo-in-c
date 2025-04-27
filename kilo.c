@@ -21,6 +21,13 @@
 
 #define KILO_VERSION "0.0.1"
 
+enum editorKey {
+  ARROW_LEFT = 1000,
+  ARROW_RIGHT,
+  ARROW_UP,
+  ARROW_DOWN
+};
+
 /*** data ***/
 
 struct editorConfig {
@@ -134,7 +141,7 @@ void enableRawMode(void) {
 /*
  * Reads a single key press from STDIN, validates read success, and returns it.
  */
-char editorReadKey(void) {
+int editorReadKey(void) {
   int nread;
   char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
@@ -142,6 +149,31 @@ char editorReadKey(void) {
       die("read");
     }
   }
+
+  // If we read an <esc>, immediately read the next two bytes.
+  if (c == '\x1b') {
+    char seq[3];
+
+    if (
+        read(STDIN_FILENO, &seq[0], 1) != 1 ||
+        read(STDIN_FILENO, &seq[1], 1) != 1
+       ) {
+      // We didn't see another key fast enough, so just return the <esc>.
+      return '\x1b';
+    }
+
+    if (seq[0] == '[') {
+      switch (seq[1]) {
+        case 'A': return ARROW_UP;
+        case 'B': return ARROW_DOWN;
+        case 'C': return ARROW_RIGHT;
+        case 'D': return ARROW_LEFT;
+      }
+    }
+
+    return '\x1b';
+  }
+
   return c;
 }
 
@@ -332,10 +364,38 @@ void editorRefreshScreen(void) {
 /*** input ***/
 
 /*
+ * Handle cursor movement options
+ */
+void editorMoveCursor(int key) {
+  switch(key) {
+    case ARROW_LEFT:
+      if (E.cx > 0) {
+        E.cx--;
+      }
+      break;
+    case ARROW_DOWN:
+      if (E.cy < E.screenrows - 1) {
+        E.cy++;
+      }
+      break;
+    case ARROW_RIGHT:
+      if (E.cx < E.screencols - 1) {
+        E.cx++;
+      }
+      break;
+    case ARROW_UP:
+      if (E.cy > 0) {
+        E.cy--;
+      }
+      break;
+  } 
+}
+
+/*
  * Checks the most recently pressed key against special handling cases
  */
 void editorProcessKeyPress(void) {
-  char c = editorReadKey();
+  int c = editorReadKey();
 
   switch(c) {
     case CTRL_KEY('q'):
@@ -346,6 +406,12 @@ void editorProcessKeyPress(void) {
       // Exit with success code. 
       exit(0);
       break;
+  case ARROW_UP:
+  case ARROW_LEFT:
+  case ARROW_DOWN:
+  case ARROW_RIGHT:
+    editorMoveCursor(c);
+    break;
   }
 }
 
