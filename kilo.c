@@ -21,6 +21,8 @@
 
 #define KILO_VERSION "0.0.1"
 
+// Enum to map ints to key names.
+// These values are outside of the standard char range to avoid conflicts
 enum editorKey {
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
@@ -162,6 +164,7 @@ int editorReadKey(void) {
       return '\x1b';
     }
 
+    // Map [A-D to our custom arrow keys
     if (seq[0] == '[') {
       switch (seq[1]) {
         case 'A': return ARROW_UP;
@@ -171,6 +174,7 @@ int editorReadKey(void) {
       }
     }
 
+    // for all other sequences just return the <esc>
     return '\x1b';
   }
 
@@ -364,7 +368,7 @@ void editorRefreshScreen(void) {
 /*** input ***/
 
 /*
- * Handle cursor movement options
+ * Handle cursor movement options by incrementing the stored cursor positions.
  */
 void editorMoveCursor(int key) {
   switch(key) {
