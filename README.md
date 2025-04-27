@@ -31,3 +31,8 @@ echo 'test' | ./kilo
 ./kilo <kilo.c
 ```
 both of which should throw errors.
+
+
+### Future Work
+[ ] configurable row/column counts
+[ ] config file support
