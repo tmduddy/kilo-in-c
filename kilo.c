@@ -208,6 +208,24 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** append buffer ***/
+
+/*
+ * An appendable buffer stores a pointer to its location and its own length.
+ * This will allows us to append our full screen output to a single buffer
+ * then write it all at once, rather than a series of individual writes which
+ * can cause a flickering effect as they execute.
+ */
+struct abuf {
+  char *b;
+  int len;
+};
+
+/*
+ * Creates a new, empty appendable buffer
+ */
+#define ABUF_INIT {NULL, 0}
+
 /*** output ***/
 
 /*
