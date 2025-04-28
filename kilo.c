@@ -80,6 +80,12 @@ struct editorConfig {
 
 struct editorConfig E;
 
+/*** prototypes ***/
+// This prototype concept seems smelly to me, but maybe it's a C thing.
+// These allow functions to be declared/shaped now, but not defined until later
+// allowing them to be used before definition when compiling.
+void editorSetStatusMessage(const char *fmt, ...);
+
 /*** terminal ***/
 
 /*
@@ -465,23 +471,6 @@ void editorInsertChar(int c) {
   E.cx++;
 }
 
-/*
- * A configurable editor status message.
- * Note that this is a variadic function, allowing any number of args
- */
-void editorSetStatusMessage(const char *fmt, ...) {
-  // parse N arguments using va_list
-  va_list ap;
-  va_start(ap, fmt);
-  // A customizable print message that handles applying the printf to
-  // every provided argument using va_arg.
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-
-  // time(NULL) fetches the current time
-  E.statusmsg_time = time(NULL);
-}
-
 /*** file i/o ***/
 
 /*
@@ -815,6 +804,23 @@ void editorRefreshScreen(void) {
   // Display full contents of ab and free the memory.
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
+}
+
+/*
+ * A configurable editor status message.
+ * Note that this is a variadic function, allowing any number of args
+ */
+void editorSetStatusMessage(const char *fmt, ...) {
+  // parse N arguments using va_list
+  va_list ap;
+  va_start(ap, fmt);
+  // A customizable print message that handles applying the printf to
+  // every provided argument using va_arg.
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+
+  // time(NULL) fetches the current time
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
