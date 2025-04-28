@@ -68,6 +68,7 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+  char *filename;
   struct termios orig_termios;
 };
 
@@ -418,6 +419,10 @@ void editorAppendRow(char *s, size_t len) {
  * Currently this only supports hard coding a single editor line
  */
 void editorOpen(char *filename) {
+  // Store the filename in the editor config.
+  free(E.filename);
+  E.filename = strdup(filename);
+
   // Open a file by name.
   FILE *fp = fopen(filename, "r");
   if (!fp) {
@@ -570,11 +575,50 @@ void editorDrawRows(struct abuf *ab) {
     // Clear to the right of the cursor.
     abAppend(ab, "\x1b[K", 3);
 
-    // Don't newline the last row.
-    if (y < E.screenrows - 1) {
-      abAppend(ab, "\r\n", 2);
+    // Add a new line to the end of every row.
+    abAppend(ab, "\r\n", 2);
+  }
+}
+
+/*
+ * Draw a status bar on the bottom row of the screen.
+ *   [m - Select Graphic Rendition affects the text rendering of the following
+ *     text
+ *     [7m - Invert colors
+ *     [m - Reverts to normal colors (default arg 0)
+ */
+void editorDrawStatusBar(struct abuf *ab) {
+  // invert colors
+  abAppend(ab, "\x1b[7m", 4);
+
+  // Add the filename (if available) and line count to the status bar.
+  char status[80];
+  // Add the current line number, right aligned
+  char rstatus[80];
+
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+                     E.filename ? E.filename : "[No Name]", E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  // Truncate the status to fit on the screen, just in case
+  if (len > E.screencols)
+    len = E.screencols;
+  abAppend(ab, status, len);
+
+  // Append a full row of spaces
+  while (len < E.screencols) {
+    if (E.screencols - len == rlen) {
+      // Once we hit the right edge - the length of our right-aligned status,
+      // add the right-aligned status message to the row.
+      abAppend(ab, rstatus, rlen);
+      break;
+    } else {
+      abAppend(ab, " ", 1);
+      len++;
     }
   }
+
+  // Restore colors
+  abAppend(ab, "\x1b[m", 3);
 }
 
 /*
@@ -593,6 +637,7 @@ void editorRefreshScreen(void) {
   abAppend(&ab, "\x1b[H", 3);
 
   editorDrawRows(&ab);
+  editorDrawStatusBar(&ab);
 
   // Move the cursor to the stored X, Y position.
   char buf[32];
@@ -731,11 +776,18 @@ void initEditor(void) {
   // Start with no text rows.
   E.numrows = 0;
 
-  // init the row pointer to NULL to allow for dynamic resizing
+  // init the row pointer to NULL to allow for dynamic resizing.
   E.row = NULL;
 
+  // init the filename pointer to NULL to allow for dynamic resizing.
+  E.filename = NULL;
+
+  // If we fail to read a screen size, exit.
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("getWindowSize");
+
+  // Reserve a row at the bottom of the editor window for the status bar.
+  E.screenrows -= 1;
 }
 
 int main(int argc, char *argv[]) {
