@@ -37,6 +37,7 @@
 // Enum to map ints to key names.
 // These values are outside of the standard char range to avoid conflicts
 enum editorKey {
+  BACKSPACE = 127,
   ARROW_LEFT = 1000,
   ARROW_RIGHT,
   ARROW_UP,
@@ -801,6 +802,10 @@ void editorProcessKeyPress(void) {
   int c = editorReadKey();
 
   switch (c) {
+  case '\r':
+    /* TODO */
+    break;
+
   case CTRL_KEY('q'):
     // Clear the screen.
     write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -810,14 +815,6 @@ void editorProcessKeyPress(void) {
     exit(0);
     break;
 
-  // Map our custom Arrow Key inputs to movement.
-  case ARROW_UP:
-  case ARROW_LEFT:
-  case ARROW_DOWN:
-  case ARROW_RIGHT:
-    editorMoveCursor(c);
-    break;
-
   // Support line beginning / end scrolling.
   case HOME_KEY:
     E.cx = 0;
@@ -825,6 +822,12 @@ void editorProcessKeyPress(void) {
   case END_KEY:
     if (E.cy < E.numrows)
       E.cx = E.row[E.cy].size;
+    break;
+
+  case BACKSPACE:
+  case CTRL_KEY('h'):
+  case DEL_KEY:
+    /* TODO */
     break;
 
   // Support full page scrolling.
@@ -848,6 +851,19 @@ void editorProcessKeyPress(void) {
       editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
     }
   } break;
+
+  // Map our custom Arrow Key inputs to movement.
+  case ARROW_UP:
+  case ARROW_LEFT:
+  case ARROW_DOWN:
+  case ARROW_RIGHT:
+    editorMoveCursor(c);
+    break;
+
+  // Handle <c-l> and <esc> as null operations.
+  case CTRL_KEY('l'):
+  case '\x1b':
+    break;
 
   default:
     // Any non-special-case char should be inserted into the editor row.
