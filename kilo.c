@@ -57,6 +57,7 @@ typedef struct erow {
 struct editorConfig {
   int cx;
   int cy;
+  int rowoff;
   int screenrows;
   int screencols;
   int numrows;
@@ -416,13 +417,31 @@ void abFree(struct abuf *ab) { free(ab->b); }
 /*** output ***/
 
 /*
+ * Account for the current cursor position and row offset to enable vertical
+ * scrolling
+ */
+void editorScroll(void) {
+  // Cursor is above the vertical window.
+  if (E.cy < E.rowoff) {
+    E.rowoff = E.cy;
+  }
+
+  // Cursor is below the vertical window.
+  if (E.cy >= E.rowoff + E.screenrows) {
+    E.rowoff = E.cy - E.screenrows + 1;
+  }
+}
+
+/*
  * Draw a column of ~ to distinguish rows.
- * [K - Erase In Line, using default arg 0 to erase to the right of the cursor.
+ * [K - Erase In Line, using default arg 0 to erase to the right of the
+ * cursor.
  */
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    if (y >= E.numrows) {
+    int filerow = y + E.rowoff;
+    if (filerow >= E.numrows) {
       // Generate a welcome message if no user rows are present.
       if (E.numrows == 0 && y == E.screenrows / 3) {
         char welcome[80];
@@ -450,11 +469,11 @@ void editorDrawRows(struct abuf *ab) {
       }
     } else {
       // truncate the text to the terminal window
-      int len = E.row[y].size;
+      int len = E.row[filerow].size;
       if (len > E.screencols) {
         len = E.screencols;
       }
-      abAppend(ab, E.row[y].chars, len);
+      abAppend(ab, E.row[filerow].chars, len);
     }
 
     // Clear to the right of the cursor.
@@ -475,6 +494,8 @@ void editorDrawRows(struct abuf *ab) {
  *   [?l / [?h - toggle off/on terminal "modes" (using 25 for cursor vis).
  */
 void editorRefreshScreen(void) {
+  editorScroll();
+
   struct abuf ab = ABUF_INIT;
 
   // Hide the cursor and reset its position
@@ -485,7 +506,7 @@ void editorRefreshScreen(void) {
 
   // Move the cursor to the stored X, Y position.
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
   abAppend(&ab, buf, strlen(buf));
 
   // Un-hide the cursor.
@@ -509,7 +530,7 @@ void editorMoveCursor(int key) {
     }
     break;
   case ARROW_DOWN:
-    if (E.cy < E.screenrows - 1) {
+    if (E.cy < E.numrows) {
       E.cy++;
     }
     break;
@@ -570,6 +591,9 @@ void initEditor(void) {
   // Set the cursor position to (0, 0).
   E.cx = 0;
   E.cy = 0;
+
+  // Start with no row offset
+  E.rowoff = 0;
 
   // Start with no text rows.
   E.numrows = 0;
