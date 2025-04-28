@@ -30,6 +30,8 @@
 
 #define KILO_VERSION "0.0.1"
 
+#define KILO_TAB_STOP 8
+
 // Enum to map ints to key names.
 // These values are outside of the standard char range to avoid conflicts
 enum editorKey {
@@ -59,6 +61,7 @@ typedef struct erow {
 struct editorConfig {
   int cx;
   int cy;
+  int rx;
   int rowoff;
   int coloff;
   int screenrows;
@@ -320,6 +323,27 @@ int getWindowSize(int *rows, int *cols) {
 /*** row operations ***/
 
 /*
+ * Calculate the correct Render Cursor x offset
+ */
+int editorRowCxToRx(erow *row, int cx) {
+  int rx = 0;
+  int j;
+  for (j = 0; j < cx; j++) {
+    // Offset X position by tab stop
+    // If it’s a tab, we use (rx % KILO_TAB_STOP) to find out how many columns
+    // we are to the right of the last tab stop,
+    // then subtract that from (KILO_TAB_STOP - 1) to find out how many
+    // columns we are to the left of the next tab stop.
+    if (row->chars[j] == '\t')
+      rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
+
+    // Regardless, add 1 to rx because we've iterated forward 1 character
+    rx++;
+  }
+  return rx;
+}
+
+/*
  * Convert a buffered text row into a rendered row for display.
  */
 void editorUpdateRow(erow *row) {
@@ -335,7 +359,7 @@ void editorUpdateRow(erow *row) {
   // Free up space and allocate it to hold the row, accounting for \t now
   // taking up 8 space characters instead.
   free(row->render);
-  row->render = malloc(row->size + (tabs * 7) + 1);
+  row->render = malloc(row->size + (tabs * (KILO_TAB_STOP - 1)) + 1);
 
   // Copy over each char from row into render.
   int idx = 0;
@@ -343,7 +367,7 @@ void editorUpdateRow(erow *row) {
     if (row->chars[j] == '\t') {
       // If the char is a tab, loop to replace it with 8 spaces.
       row->render[idx++] = ' ';
-      while (idx % 8 != 0)
+      while (idx % KILO_TAB_STOP != 0)
         row->render[idx++] = ' ';
     } else {
       // Otherwise copy it over as-is.
@@ -466,10 +490,16 @@ void abFree(struct abuf *ab) { free(ab->b); }
 /*** output ***/
 
 /*
- * Account for the current cursor position and row offset to enable vertical
- * scrolling
+ * Account for the current cursor position and row offset to enable scrolling.
  */
 void editorScroll(void) {
+  // Use the Render Cursor X position to account for renders that don't
+  // match the character count, like '\t' taking KILO_TAB_STOP spaces.
+  E.rx = 0;
+  if (E.cy < E.numrows) {
+    E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
+  }
+
   // Cursor is above the vertical window.
   if (E.cy < E.rowoff) {
     E.rowoff = E.cy;
@@ -481,13 +511,13 @@ void editorScroll(void) {
   }
 
   // Cursor is left of the horizontal window
-  if (E.cx < E.coloff) {
-    E.coloff = E.cx;
+  if (E.rx < E.coloff) {
+    E.coloff = E.rx;
   }
 
   // Cursor is right of the horizontal window
-  if (E.cx >= E.coloff + E.screencols) {
-    E.coloff = E.cx - E.screencols + 1;
+  if (E.rx >= E.coloff + E.screencols) {
+    E.coloff = E.rx - E.screencols + 1;
   }
 }
 
@@ -567,7 +597,7 @@ void editorRefreshScreen(void) {
   // Move the cursor to the stored X, Y position.
   char buf[32];
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
-           (E.cx - E.coloff) + 1);
+           (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
 
   // Un-hide the cursor.
@@ -642,6 +672,7 @@ void editorProcessKeyPress(void) {
     // Exit with success code.
     exit(0);
     break;
+
   // Map our custom Arrow Key inputs to movement.
   case ARROW_UP:
   case ARROW_LEFT:
@@ -649,14 +680,32 @@ void editorProcessKeyPress(void) {
   case ARROW_RIGHT:
     editorMoveCursor(c);
     break;
+
+  // Support line beginning / end scrolling.
   case HOME_KEY:
     E.cx = 0;
     break;
   case END_KEY:
-    E.cx = E.screenrows - 1;
+    if (E.cy < E.numrows)
+      E.cx = E.row[E.cy].size;
     break;
+
+  // Support full page scrolling.
   case PAGE_UP:
   case PAGE_DOWN: {
+    // Why are we doing these conditional checks in a switch? Ew.
+    if (c == PAGE_UP) {
+      // Scroll to the top of the page.
+      E.cy = E.rowoff;
+    } else if (c == PAGE_DOWN) {
+      // Scroll to the bottom of the page and place the cursor at the bottom.
+      E.cy = E.rowoff + E.screenrows - 1;
+      if (E.cy > E.numrows)
+        // If that would put us outside of the file, place us 1 line after the
+        // end of the file instead.
+        E.cy = E.numrows;
+    }
+
     int times = E.screenrows;
     while (times--) {
       editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -671,6 +720,9 @@ void initEditor(void) {
   // Set the cursor position to (0, 0).
   E.cx = 0;
   E.cy = 0;
+
+  // Set the Render Cursor position to 0
+  E.rx = 0;
 
   // Start with no row or column offset.
   E.rowoff = 0;
