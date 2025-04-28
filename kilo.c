@@ -72,6 +72,7 @@ struct editorConfig {
   int screencols;
   int numrows;
   erow *row;
+  int dirty;
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
@@ -422,6 +423,7 @@ void editorAppendRow(char *s, size_t len) {
 
   // Let the editor know how long the rows array is.
   E.numrows++;
+  E.dirty++;
 }
 
 /*
@@ -451,6 +453,8 @@ void editorRowInsertChar(erow *row, int at, int c) {
   // Insert the new character and persist it to the editor.
   row->chars[at] = c;
   editorUpdateRow(row);
+
+  E.dirty++;
 }
 
 /*** editor operations ***/
@@ -543,6 +547,9 @@ void editorOpen(char *filename) {
   // Re-free the memory allocated to the line and close the file.
   free(line);
   fclose(fp);
+
+  // Reset the dirty flag on open to ensure we start clean.
+  E.dirty = 0;
 }
 
 /*
@@ -569,6 +576,8 @@ void editorSave(void) {
       if (write(fd, buf, len) != -1) {
         close(fd);
         free(buf);
+        // Reset the dirty flag on every save.
+        E.dirty = 0;
         editorSetStatusMessage("%d bytes written to disk", len);
         return;
       }
@@ -725,8 +734,9 @@ void editorDrawStatusBar(struct abuf *ab) {
   // Add the current line number, right aligned
   char rstatus[80];
 
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                     E.filename ? E.filename : "[No Name]", E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+                     E.filename ? E.filename : "[No Name]", E.numrows,
+                     E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
   // Truncate the status to fit on the screen, just in case
   if (len > E.screencols)
@@ -974,6 +984,9 @@ void initEditor(void) {
 
   // Init the row pointer to NULL to allow for dynamic resizing.
   E.row = NULL;
+
+  // Init the dirty flag to 0 / Off when we start
+  E.dirty = 0;
 
   // Init the filename pointer to NULL to allow for dynamic resizing.
   E.filename = NULL;
