@@ -60,7 +60,7 @@ struct editorConfig {
   int screenrows;
   int screencols;
   int numrows;
-  erow row;
+  erow *row;
   struct termios orig_termios;
 };
 
@@ -313,6 +313,25 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** row operations ***/
+
+/*
+ * Add a row as a string with length len as a new row in the editor.
+ */
+void editorAppendRow(char *s, size_t len) {
+  // Define the length of the row to add and store a pointer to
+  // the next free large enough memory address.
+  E.row.size = len;
+  E.row.chars = malloc(len + 1);
+
+  // copy the len bytes from memory address S to memory address E.row.chars
+  memcpy(E.row.chars, s, len);
+  E.row.chars[len] = '\0';
+
+  // Let the editor know how long the rows array is.
+  E.numrows = 1;
+}
+
 /*** file i/o ***/
 
 /*
@@ -342,12 +361,7 @@ void editorOpen(char *filename) {
            (line[linelen - 1] == '\r' || line[linelen - 1] == '\n')) {
       linelen--;
     }
-    // Copy the read line into the editor row.
-    E.row.size = linelen;
-    E.row.chars = malloc(linelen + 1);
-    memcpy(E.row.chars, line, linelen);
-    E.row.chars[linelen] = '\0';
-    E.numrows = 1;
+    editorAppendRow(line, linelen);
   }
 
   // Re-free the memory allocated to the line and close the file.
@@ -556,6 +570,9 @@ void initEditor(void) {
 
   // Start with no text rows.
   E.numrows = 0;
+
+  // init the row pointer to NULL to allow for dynamic resizing
+  E.row = NULL;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("getWindowSize");
