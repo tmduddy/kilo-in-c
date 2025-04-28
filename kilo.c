@@ -319,17 +319,22 @@ int getWindowSize(int *rows, int *cols) {
  * Add a row as a string with length len as a new row in the editor.
  */
 void editorAppendRow(char *s, size_t len) {
+  // Allocate space for a new erow.
+  E.row = realloc(E.row, (sizeof(erow)) * (E.numrows + 1));
+
   // Define the length of the row to add and store a pointer to
   // the next free large enough memory address.
-  E.row.size = len;
-  E.row.chars = malloc(len + 1);
+  int at = E.numrows;
+  E.row[at].size = len;
+  E.row[at].chars = malloc(len + 1);
 
-  // copy the len bytes from memory address S to memory address E.row.chars
-  memcpy(E.row.chars, s, len);
-  E.row.chars[len] = '\0';
+  // copy the len bytes from memory address s to the memory addresses starting
+  // with the start-point of the new row.
+  memcpy(E.row[at].chars, s, len);
+  E.row[at].chars[len] = '\0';
 
   // Let the editor know how long the rows array is.
-  E.numrows = 1;
+  E.numrows++;
 }
 
 /*** file i/o ***/
@@ -351,11 +356,9 @@ void editorOpen(char *filename) {
   ssize_t linelen;
   // When getline receives a NULL *line and 0 line capacity arg, it will
   // automatically allocate the correct amount of memory and store the
-  // correct *line pointer and capacity, returning the length;
-  linelen = getline(&line, &linecap, fp);
-
-  // A linelen of -1 indicates the end of the file.
-  if (linelen != -1) {
+  // correct *line pointer and capacity, returning the length.
+  // Note: A linelen of -1 indicates the end of the file.
+  while ((linelen = getline(&line, &linecap, fp)) != -1) {
     // Strip off new lines and carriage returns.
     while (linelen > 0 &&
            (line[linelen - 1] == '\r' || line[linelen - 1] == '\n')) {
@@ -447,11 +450,11 @@ void editorDrawRows(struct abuf *ab) {
       }
     } else {
       // truncate the text to the terminal window
-      int len = E.row.size;
+      int len = E.row[y].size;
       if (len > E.screencols) {
         len = E.screencols;
       }
-      abAppend(ab, E.row.chars, len);
+      abAppend(ab, E.row[y].chars, len);
     }
 
     // Clear to the right of the cursor.
