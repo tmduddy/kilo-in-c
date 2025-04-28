@@ -418,6 +418,9 @@ void editorAppendRow(char *s, size_t len) {
 
 /*
  * Insert a single character at a given position in an existing row.
+ * Note that this function does not need to know the details of the
+ * cursor positioning, it only worries about the memory operations required
+ * to insert the character.
  */
 void editorRowInsertChar(erow *row, int at, int c) {
   // Validate 'at', noting that it can be 1 position past the end of the row
@@ -440,6 +443,24 @@ void editorRowInsertChar(erow *row, int at, int c) {
   // Insert the new character and persist it to the editor.
   row->chars[at] = c;
   editorUpdateRow(row);
+}
+
+/*** editor operations ***/
+
+/*
+ * Manage the cursor aspect of new character insertion.
+ * Note that this function does not need to know about the memory implications
+ * of inserting a new character, it only manages the cursor positioning.
+ */
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) {
+    // If the cursor is one past the end of the file (on the new-line-tilde)
+    // add a new empty row before inserting the character
+    editorAppendRow("", 0);
+  }
+
+  editorRowInsertChar(&E.row[E.cy], E.cx, c);
+  E.cx++;
 }
 
 /*** file i/o ***/
@@ -827,6 +848,11 @@ void editorProcessKeyPress(void) {
       editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
     }
   } break;
+
+  default:
+    // Any non-special-case char should be inserted into the editor row.
+    editorInsertChar(c);
+    break;
   }
 }
 
