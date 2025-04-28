@@ -58,6 +58,7 @@ struct editorConfig {
   int cx;
   int cy;
   int rowoff;
+  int coloff;
   int screenrows;
   int screencols;
   int numrows;
@@ -430,6 +431,16 @@ void editorScroll(void) {
   if (E.cy >= E.rowoff + E.screenrows) {
     E.rowoff = E.cy - E.screenrows + 1;
   }
+
+  // Cursor is left of the horizontal window
+  if (E.cx < E.coloff) {
+    E.coloff = E.cx;
+  }
+
+  // Cursor is right of the horizontal window
+  if (E.cx >= E.coloff + E.screencols) {
+    E.coloff = E.cx - E.screencols + 1;
+  }
 }
 
 /*
@@ -468,12 +479,14 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, "~", 1);
       }
     } else {
-      // truncate the text to the terminal window
-      int len = E.row[filerow].size;
-      if (len > E.screencols) {
+      // truncate the text to the terminal window, accounting for the column
+      // offset to allow for horizontal scrolling.
+      int len = E.row[filerow].size - E.coloff;
+      if (len < 0)
+        len = 0;
+      if (len > E.screencols)
         len = E.screencols;
-      }
-      abAppend(ab, E.row[filerow].chars, len);
+      abAppend(ab, &E.row[filerow].chars[E.coloff], len);
     }
 
     // Clear to the right of the cursor.
@@ -490,7 +503,6 @@ void editorDrawRows(struct abuf *ab) {
  * Clears the screen and repositions the cursor.
  * Note: this function takes advantage of VT100 Escape Sequences.
  *   [J - Erase In Display (using 2 to set erase entire display.
- *   [H - Reposition Cursor
  *   [?l / [?h - toggle off/on terminal "modes" (using 25 for cursor vis).
  */
 void editorRefreshScreen(void) {
@@ -506,7 +518,8 @@ void editorRefreshScreen(void) {
 
   // Move the cursor to the stored X, Y position.
   char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, E.cx + 1);
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
+           (E.cx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
 
   // Un-hide the cursor.
@@ -523,6 +536,9 @@ void editorRefreshScreen(void) {
  * Handle cursor movement options by incrementing the stored cursor positions.
  */
 void editorMoveCursor(int key) {
+  // Limit the cursor veritcally to 1 past the end of the file.
+  erow *row = (E.cy > E.numrows) ? NULL : &E.row[E.cy];
+
   switch (key) {
   case ARROW_LEFT:
     if (E.cx > 0) {
@@ -535,7 +551,7 @@ void editorMoveCursor(int key) {
     }
     break;
   case ARROW_RIGHT:
-    if (E.cx < E.screencols - 1) {
+    if (row && E.cx < row->size) {
       E.cx++;
     }
     break;
@@ -592,8 +608,9 @@ void initEditor(void) {
   E.cx = 0;
   E.cy = 0;
 
-  // Start with no row offset
+  // Start with no row or column offset.
   E.rowoff = 0;
+  E.coloff = 0;
 
   // Start with no text rows.
   E.numrows = 0;
