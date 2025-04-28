@@ -416,6 +416,32 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
+/*
+ * Insert a single character at a given position in an existing row.
+ */
+void editorRowInsertChar(erow *row, int at, int c) {
+  // Validate 'at', noting that it can be 1 position past the end of the row
+  // in which case it needs to be moved placed at the actual end of the row
+  // row->size.
+  if (at < 0 || at > row->size)
+    at = row->size;
+
+  // Allocate a block with enough memory for the current row + 2,
+  // 1 for the new character and 1 for the null byte.
+  row->chars = realloc(row->chars, row->size + 2);
+
+  // memmove is a lot like memcpy but safe to use in cases where the
+  // to and from arrays / memory blocks overlap.
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+
+  // Let the row know its new size.
+  row->size++;
+
+  // Insert the new character and persist it to the editor.
+  row->chars[at] = c;
+  editorUpdateRow(row);
+}
+
 /*** file i/o ***/
 
 /*
