@@ -51,7 +51,9 @@ enum editorKey {
  */
 typedef struct erow {
   int size;
+  int rsize;
   char *chars;
+  char *render;
 } erow;
 
 struct editorConfig {
@@ -318,15 +320,55 @@ int getWindowSize(int *rows, int *cols) {
 /*** row operations ***/
 
 /*
+ * Convert a buffered text row into a rendered row for display.
+ */
+void editorUpdateRow(erow *row) {
+  // Count the number of tab characters in the row in order to alloc enough
+  // memory.
+  int tabs = 0;
+  int j;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t')
+      tabs++;
+  }
+
+  // Free up space and allocate it to hold the row, accounting for \t now
+  // taking up 8 space characters instead.
+  free(row->render);
+  row->render = malloc(row->size + (tabs * 7) + 1);
+
+  // Copy over each char from row into render.
+  int idx = 0;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t') {
+      // If the char is a tab, loop to replace it with 8 spaces.
+      row->render[idx++] = ' ';
+      while (idx % 8 != 0)
+        row->render[idx++] = ' ';
+    } else {
+      // Otherwise copy it over as-is.
+      row->render[idx++] = row->chars[j];
+    }
+  }
+
+  // Denote the end of the line
+  row->render[idx] = '\0';
+  // After the above for-loop, idx contains the number of chars that were
+  // copied over and can be used to describe the render size
+  row->rsize = idx;
+}
+
+/*
  * Add a row as a string with length len as a new row in the editor.
  */
 void editorAppendRow(char *s, size_t len) {
   // Allocate space for a new erow.
   E.row = realloc(E.row, (sizeof(erow)) * (E.numrows + 1));
 
+  int at = E.numrows;
+
   // Define the length of the row to add and store a pointer to
   // the next free large enough memory address.
-  int at = E.numrows;
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1);
 
@@ -334,6 +376,12 @@ void editorAppendRow(char *s, size_t len) {
   // with the start-point of the new row.
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
+
+  // Define the size of the text to render and a NULL pointer.
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  // pass the mem address of the current row's start position.
+  editorUpdateRow(&E.row[at]);
 
   // Let the editor know how long the rows array is.
   E.numrows++;
@@ -481,12 +529,12 @@ void editorDrawRows(struct abuf *ab) {
     } else {
       // truncate the text to the terminal window, accounting for the column
       // offset to allow for horizontal scrolling.
-      int len = E.row[filerow].size - E.coloff;
+      int len = E.row[filerow].rsize - E.coloff;
       if (len < 0)
         len = 0;
       if (len > E.screencols)
         len = E.screencols;
-      abAppend(ab, &E.row[filerow].chars[E.coloff], len);
+      abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
 
     // Clear to the right of the cursor.
