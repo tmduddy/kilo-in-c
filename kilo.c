@@ -35,6 +35,8 @@
 
 #define KILO_TAB_STOP 8
 
+#define KILO_QUIT_TIMES 3
+
 // Enum to map ints to key names.
 // These values are outside of the standard char range to avoid conflicts
 enum editorKey {
@@ -886,6 +888,8 @@ void editorMoveCursor(int key) {
  * Checks the most recently pressed key against special handling cases
  */
 void editorProcessKeyPress(void) {
+  static int quit_times = KILO_QUIT_TIMES;
+
   int c = editorReadKey();
 
   switch (c) {
@@ -895,6 +899,14 @@ void editorProcessKeyPress(void) {
 
   // Quit out with <c-q>
   case CTRL_KEY('q'):
+    // Require multiple <c-q> hits to exit with pending changes
+    if (E.dirty && quit_times > 0) {
+      editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+                             "Press ctrl-q %d more times to quit.",
+                             quit_times);
+      quit_times--;
+      return;
+    }
     // Clear the screen.
     write(STDOUT_FILENO, "\x1b[2J", 4);
     write(STDOUT_FILENO, "\x1b[H", 3);
@@ -963,6 +975,9 @@ void editorProcessKeyPress(void) {
     editorInsertChar(c);
     break;
   }
+
+  // Reset quit_times if the user does anything other than quit.
+  quit_times = KILO_QUIT_TIMES;
 }
 
 /*** init ***/
