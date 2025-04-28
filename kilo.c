@@ -2,12 +2,14 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 /*** defines ***/
@@ -69,6 +71,8 @@ struct editorConfig {
   int numrows;
   erow *row;
   char *filename;
+  char statusmsg[80];
+  time_t statusmsg_time;
   struct termios orig_termios;
 };
 
@@ -619,6 +623,29 @@ void editorDrawStatusBar(struct abuf *ab) {
 
   // Restore colors
   abAppend(ab, "\x1b[m", 3);
+
+  // Add a new line to suppor the status message.
+  abAppend(ab, "\r\n", 2);
+}
+
+/*
+ * Display a custom messsage underneath the status bar at the bottom of the
+ * editor window.
+ *   [K - Clear the line
+ */
+void editorDrawMessageBar(struct abuf *ab) {
+  // Clear the message bar line.
+  abAppend(ab, "\x1b[K", 3);
+
+  int msglen = strlen(E.statusmsg);
+  // Truncate the message to fit the window if necessary.
+  if (msglen > E.screencols)
+    msglen = E.screencols;
+
+  // Display the message if it is less than 5 seconds old.
+  // Note: it will only disappear when a key is pressed to refresh the screen.
+  if (msglen && time(NULL) - E.statusmsg_time < 5)
+    abAppend(ab, E.statusmsg, msglen);
 }
 
 /*
@@ -638,6 +665,7 @@ void editorRefreshScreen(void) {
 
   editorDrawRows(&ab);
   editorDrawStatusBar(&ab);
+  editorDrawMessageBar(&ab);
 
   // Move the cursor to the stored X, Y position.
   char buf[32];
@@ -651,6 +679,23 @@ void editorRefreshScreen(void) {
   // Display full contents of ab and free the memory.
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
+}
+
+/*
+ * A configurable editor status message.
+ * Note that this is a variadic function, allowing any number of args
+ */
+void editorSetStatusMessage(const char *fmt, ...) {
+  // parse N arguments using va_list
+  va_list ap;
+  va_start(ap, fmt);
+  // A customizable print message that handles applying the printf to
+  // every provided argument using va_arg.
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+
+  // time(NULL) fetches the current time
+  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -776,18 +821,23 @@ void initEditor(void) {
   // Start with no text rows.
   E.numrows = 0;
 
-  // init the row pointer to NULL to allow for dynamic resizing.
+  // Init the row pointer to NULL to allow for dynamic resizing.
   E.row = NULL;
 
-  // init the filename pointer to NULL to allow for dynamic resizing.
+  // Init the filename pointer to NULL to allow for dynamic resizing.
   E.filename = NULL;
+
+  // Init an empty status message to show the user under the status bar.
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
 
   // If we fail to read a screen size, exit.
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
     die("getWindowSize");
 
-  // Reserve a row at the bottom of the editor window for the status bar.
-  E.screenrows -= 1;
+  // Reserve 2 rows at the bottom of the editor window for the
+  // status bar and message.
+  E.screenrows -= 2;
 }
 
 int main(int argc, char *argv[]) {
@@ -797,6 +847,8 @@ int main(int argc, char *argv[]) {
   if (argc >= 2) {
     editorOpen(argv[1]);
   }
+
+  editorSetStatusMessage("HELP: Ctrl-q = quit");
 
   // Loop until user exits.
   while (1) {
