@@ -465,6 +465,23 @@ void editorInsertChar(int c) {
   E.cx++;
 }
 
+/*
+ * A configurable editor status message.
+ * Note that this is a variadic function, allowing any number of args
+ */
+void editorSetStatusMessage(const char *fmt, ...) {
+  // parse N arguments using va_list
+  va_list ap;
+  va_start(ap, fmt);
+  // A customizable print message that handles applying the printf to
+  // every provided argument using va_arg.
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+
+  // time(NULL) fetches the current time
+  E.statusmsg_time = time(NULL);
+}
+
 /*** file i/o ***/
 
 /*
@@ -556,18 +573,22 @@ void editorSave(void) {
   // 0644 is a permissions object allowing the file owner to r/w
   // but limiting to read only for other users.
   int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+  if (fd != -1) {
+    // Set the file's size to the length set in editorRowstoString
+    if (ftruncate(fd, len) != -1) {
+      // Write the results to disk.
+      if (write(fd, buf, len) != -1) {
+        close(fd);
+        free(buf);
+        editorSetStatusMessage("%d bytes written to disk", len);
+        return;
+      }
+    }
+    close(fd);
+  }
 
-  // Set the file's size to the length set in editorRowstoString
-  ftruncate(fd, len);
-
-  // Write the results to disk.
-  write(fd, buf, len);
-
-  // Close the file to prevent further updates.
-  close(fd);
-
-  // Free the memory allocated for the string now that its written to disk.
   free(buf);
+  editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
 /*** append buffer ***/
@@ -796,23 +817,6 @@ void editorRefreshScreen(void) {
   abFree(&ab);
 }
 
-/*
- * A configurable editor status message.
- * Note that this is a variadic function, allowing any number of args
- */
-void editorSetStatusMessage(const char *fmt, ...) {
-  // parse N arguments using va_list
-  va_list ap;
-  va_start(ap, fmt);
-  // A customizable print message that handles applying the printf to
-  // every provided argument using va_arg.
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-
-  // time(NULL) fetches the current time
-  E.statusmsg_time = time(NULL);
-}
-
 /*** input ***/
 
 /*
@@ -989,7 +993,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-q = quit");
+  editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-q = quit");
 
   // Loop until user exits.
   while (1) {
