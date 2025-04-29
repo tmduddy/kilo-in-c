@@ -429,6 +429,32 @@ void editorAppendRow(char *s, size_t len) {
 }
 
 /*
+ * Free the raw and rendered char arrays from a given editor row.
+ */
+void editorFreeRow(erow *row) {
+  free(row->render);
+  free(row->chars);
+}
+
+/*
+ * Completely delete a single row.
+ */
+void editorDelRow(int at) {
+  if (at < 0 || at >= E.numrows)
+    return;
+
+  // Free the memory owned by the row to delete.
+  editorFreeRow(&E.row[at]);
+
+  // Shift all following rows into the memory previously occupied by the row
+  // to delete.
+  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+
+  E.numrows--;
+  E.dirty++;
+}
+
+/*
  * Insert a single character at a given position in an existing row.
  * Note that this function does not need to know the details of the
  * cursor positioning, it only worries about the memory operations required
@@ -456,6 +482,28 @@ void editorRowInsertChar(erow *row, int at, int c) {
   row->chars[at] = c;
   editorUpdateRow(row);
 
+  E.dirty++;
+}
+
+/*
+ * Append a given string s of length len to a given editor row.
+ */
+void editorRowAppendString(erow *row, char *s, size_t len) {
+  // Increase the memory size of the given row to account for the length of the
+  // new string, plus 1 more for the EOL null byte.
+  row->chars = realloc(row->chars, row->size + len + 1);
+
+  // Copy the contents of s to the end of the row's chars array.
+  memcpy(&row->chars[row->size], s, len);
+
+  // Update the stored row size.
+  row->size += len;
+
+  // Add the EOL null byte.
+  row->chars[row->size] = '\0';
+
+  // Persist the change to the editor row.
+  editorUpdateRow(row);
   E.dirty++;
 }
 
@@ -499,14 +547,33 @@ void editorInsertChar(int c) {
  * Manage the cursor aspect of character deletion.
  */
 void editorDelChar(void) {
+  // Cannot delete from past the last row.
   if (E.cy == E.numrows)
+    return;
+  // Cannot delete from the before the first row.
+  if (E.cx == 0 && E.cy == 0)
     return;
 
   erow *row = &E.row[E.cy];
 
   if (E.cx > 0) {
+    // If the cursor is within or at the end of a given row, delete one char.
     editorRowDelChar(row, E.cx - 1);
     E.cx--;
+  } else {
+    // If the cursor is at the beginning of a row, move the cursor horizontally
+    // to the end of the previous row, without moving its vertical position.
+    E.cx = E.row[E.cy - 1].size;
+
+    // Append the full contents of the current row to the end of the previous
+    // row's contents
+    editorRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
+
+    // Delete the current row entirely
+    editorDelRow(E.cy);
+
+    // move the cursor up one row
+    E.cy--;
   }
 }
 
