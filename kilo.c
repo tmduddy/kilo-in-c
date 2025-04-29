@@ -399,13 +399,17 @@ void editorUpdateRow(erow *row) {
 }
 
 /*
- * Add a row as a string with length len as a new row in the editor.
+ * Add a row as a string with length len as a new row in the editor at a given
+ * position, 'at'.
  */
-void editorAppendRow(char *s, size_t len) {
+void editorInsertRow(int at, char *s, size_t len) {
+  if (at < 0 || at > E.numrows)
+    return;
+
   // Allocate space for a new erow.
   E.row = realloc(E.row, (sizeof(erow)) * (E.numrows + 1));
-
-  int at = E.numrows;
+  // Make room at the specified index for the new row
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
 
   // Define the length of the row to add and store a pointer to
   // the next free large enough memory address.
@@ -536,11 +540,39 @@ void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
     // If the cursor is one past the end of the file (on the new-line-tilde)
     // add a new empty row before inserting the character
-    editorAppendRow("", 0);
+    editorInsertRow(E.numrows, "", 0);
   }
 
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+/*
+ * Add a new row below the current cursor position containing
+ * only an empty string or a null byte.
+ */
+void editorInsertNewline(void) {
+  // If the cursor is at the start of the line, simply insert a new empty row
+  // at the current vertical position.
+  if (E.cx == 0) {
+    editorInsertRow(E.cy, "", 0);
+  } else {
+    // Copy the current row to a new memory block.
+    erow *row = &E.row[E.cy];
+    // Add a new row below the current row containing the characters
+    // from the current X position and right.
+    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    // truncate the current row at the cursor position
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    // add an EOL null byte at the cursor position.
+    row->chars[row->size] = '\0';
+    // Persist the updated row to the editor.
+    editorUpdateRow(row);
+  }
+  // Move the cursor down to the beginning of the next (i.e. new) line.
+  E.cy++;
+  E.cx = 0;
 }
 
 /*
@@ -643,7 +675,7 @@ void editorOpen(char *filename) {
            (line[linelen - 1] == '\r' || line[linelen - 1] == '\n')) {
       linelen--;
     }
-    editorAppendRow(line, linelen);
+    editorInsertRow(E.numrows, line, linelen);
   }
 
   // Re-free the memory allocated to the line and close the file.
@@ -994,7 +1026,7 @@ void editorProcessKeyPress(void) {
 
   switch (c) {
   case '\r':
-    /* TODO */
+    editorInsertNewline();
     break;
 
   // Quit out with <c-q>
