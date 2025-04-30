@@ -55,7 +55,7 @@ enum editorKey {
 /*
  * Store the possible categories of text to highlight.
  */
-enum editorHighlight { HL_NORMAL = 0, HL_NUMBER };
+enum editorHighlight { HL_NORMAL = 0, HL_NUMBER, HL_MATCH };
 
 /*** data ***/
 
@@ -376,6 +376,8 @@ int editorSyntaxToColor(int hl) {
   switch (hl) {
   case HL_NUMBER:
     return 31;
+  case HL_MATCH:
+    return 34;
   default:
     return 37;
   }
@@ -817,6 +819,18 @@ void editorFindCallback(char *query, int key) {
   // where 1 = forwards from the cursor and -1 = backwards
   static int direction = 1;
 
+  // Prepare to store the row index of the match row so that highlighting can
+  // be applied and removed.
+  static int saved_hl_line;
+  static char *saved_hl = NULL;
+
+  // Reset any current highlighting before finding the next match.
+  if (saved_hl) {
+    memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].rsize);
+    free(saved_hl);
+    saved_hl = NULL;
+  }
+
   if (key == '\r' || key == '\x1b') {
     last_match = -1;
     direction = 1;
@@ -862,6 +876,15 @@ void editorFindCallback(char *query, int key) {
       // screen refresh the current cursor position is placed at the top of
       // the screen.
       E.rowoff = E.numrows;
+
+      // Apply syntax highlighting to the found matches.
+      saved_hl_line = current;
+      saved_hl = malloc(row->rsize);
+      memcpy(saved_hl, row->hl, row->rsize);
+
+      // Set all of the found characters' HL statuses to HL_MATCH
+      // for highlighting
+      memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
       break;
     }
   }
