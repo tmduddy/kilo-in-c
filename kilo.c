@@ -91,7 +91,7 @@ struct editorConfig E;
 
 void editorSetStatusMessage(const char *fmt, ...);
 void editorRefreshScreen(void);
-char *editorPrompt(char *prompt);
+char *editorPrompt(char *prompt, void (*callback)(char *, int));
 
 /*** terminal ***/
 
@@ -722,7 +722,7 @@ void editorSave(void) {
   // If this is not an existing file, we don't know where to save it, so
   // prompt the user for a name, and use that.
   if (E.filename == NULL) {
-    E.filename = editorPrompt("Save as: %s");
+    E.filename = editorPrompt("Save as: %s", NULL);
     if (E.filename == NULL) {
       // If the user exited the save as prompt with <esc>, bail out.
       editorSetStatusMessage("Save cancelled");
@@ -763,11 +763,10 @@ void editorSave(void) {
 /*
  * Allow users to search for a string and automatically jump to the next match
  */
-void editorFind(void) {
-  // Prompt the user for a search string stored at *query
-  char *query = editorPrompt("Search: %s (ESC to cancel)");
-  if (query == NULL)
+void editorFindCallback(char *query, int key) {
+  if (key == '\r' || key == '\x1b') {
     return;
+  }
 
   // Iterate through every row in the editor.
   int i;
@@ -788,8 +787,17 @@ void editorFind(void) {
       break;
     }
   }
+}
 
-  free(query);
+/*
+ * Prompt the user to perform a search and pass the input to editorFindCallback
+ */
+void editorFind(void) {
+  // Prompt the user for a search string stored at *query
+  char *query = editorPrompt("Search: %s (ESC to cancel)", editorFindCallback);
+
+  if (query)
+    free(query);
 }
 
 /*** append buffer ***/
@@ -1041,8 +1049,10 @@ void editorSetStatusMessage(const char *fmt, ...) {
 /*
  * Display a user text prompt in the status bar.
  * Note that *prompt should be a format string using %s.
+ * callback is an optional function that will be called after each keypress.
+ * It takes the user input and the last key pressed.
  */
-char *editorPrompt(char *prompt) {
+char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   // Allocate enough space to hold 128 user input characters in the prompt.
   size_t bufsize = 128;
   char *buf = malloc(bufsize);
@@ -1066,6 +1076,8 @@ char *editorPrompt(char *prompt) {
     } else if (c == '\x1b') {
       // Exit on <esc>
       editorSetStatusMessage("");
+      if (callback)
+        callback(buf, c);
       free(buf);
       return NULL;
     } else if (c == '\r') {
@@ -1073,6 +1085,8 @@ char *editorPrompt(char *prompt) {
       // return a pointer to the input.
       if (buflen != 0) {
         editorSetStatusMessage("");
+        if (callback)
+          callback(buf, c);
         return buf;
       }
     } else if (!iscntrl(c) && c < 128) {
@@ -1089,6 +1103,9 @@ char *editorPrompt(char *prompt) {
       // Add an EOL null byte at the end.
       buf[buflen] = '\0';
     }
+
+    if (callback)
+      callback(buf, c);
   }
 }
 /*
