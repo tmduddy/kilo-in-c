@@ -52,6 +52,11 @@ enum editorKey {
   PAGE_DOWN
 };
 
+/*
+ * Store the possible categories of text to highlight.
+ */
+enum editorHighlight { HL_NORMAL = 0, HL_NUMBER };
+
 /*** data ***/
 
 /*
@@ -62,6 +67,7 @@ typedef struct erow {
   int rsize;
   char *chars;
   char *render;
+  unsigned char *hl;
 } erow;
 
 struct editorConfig {
@@ -340,6 +346,41 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** syntax highlighting ***/
+
+/*
+ * Categorize the contents of a given row into syntax categories
+ * for highlighting.
+ */
+void editorUpdateSyntax(erow *row) {
+  // Allocate enough memory in hl to store the current row
+  row->hl = realloc(row->hl, row->rsize);
+  // copy the default highlighting category into the each memory
+  // block for the row.
+  memset(row->hl, HL_NORMAL, row->rsize);
+
+  // Iterate through the rendered characters in the row.
+  int i;
+  for (i = 0; i < row->rsize; i++) {
+    if (isdigit(row->render[i])) {
+      // Assign HL_NUMBER to all digits
+      row->hl[i] = HL_NUMBER;
+    }
+  }
+}
+
+/*
+ * Assign a color (via ANSI code) to each syntax category.
+ */
+int editorSyntaxToColor(int hl) {
+  switch (hl) {
+  case HL_NUMBER:
+    return 31;
+  default:
+    return 37;
+  }
+}
+
 /*** row operations ***/
 
 /*
@@ -425,6 +466,9 @@ void editorUpdateRow(erow *row) {
   // After the above for-loop, idx contains the number of chars that were
   // copied over and can be used to describe the render size
   row->rsize = idx;
+
+  // Refresh the syntax highlighting assignments for this row.
+  editorUpdateSyntax(row);
 }
 
 /*
@@ -450,9 +494,11 @@ void editorInsertRow(int at, char *s, size_t len) {
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
 
-  // Define the size of the text to render and a NULL pointer.
+  // Define the size of the text to render and a NULL pointer for rendering
+  // and highlighting;
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
+  E.row[at].hl = NULL;
   // pass the mem address of the current row's start position.
   editorUpdateRow(&E.row[at]);
 
@@ -467,6 +513,7 @@ void editorInsertRow(int at, char *s, size_t len) {
 void editorFreeRow(erow *row) {
   free(row->render);
   free(row->chars);
+  free(row->hl);
 }
 
 /*
@@ -964,21 +1011,39 @@ void editorDrawRows(struct abuf *ab) {
       if (len > E.screencols)
         len = E.screencols;
 
-      // store the currently visible row text in c
+      // Store the currently visible row text in c and hl
       char *c = &E.row[filerow].render[E.coloff];
+      unsigned char *hl = &E.row[filerow].hl[E.coloff];
+
+      int current_color = -1;
+
       // Iterate through every character in the visible row and apply styling.
       int j;
       for (j = 0; j < len; j++) {
-        if (isdigit(c[j])) {
-          // Draw all digits as red.
-          abAppend(ab, "\x1b[31m", 5);
+        if (hl[j] == HL_NORMAL) {
+          if (current_color != -1) {
+            // Only reset text coloring if it's been applied.
+            abAppend(ab, "\x1b[39m", 5);
+            current_color = -1;
+          }
           abAppend(ab, &c[j], 1);
-          abAppend(ab, "\x1b[39m", 5);
         } else {
+          // Find the correct color for the character.
+          int color = editorSyntaxToColor(hl[j]);
+          // Check if the current color is already being applied.
+          if (color != current_color) {
+            current_color = color;
+            // Create a char buf to hold the color setting string.
+            char buf[16];
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+            // Add the color setting string and character to the row.
+            abAppend(ab, buf, clen);
+          }
           abAppend(ab, &c[j], 1);
         }
       }
-      abAppend(ab, &E.row[filerow].render[E.coloff], len);
+      // Reset all text coloring.
+      abAppend(ab, "\x1b[39m", 5);
     }
 
     // Clear to the right of the cursor.
