@@ -698,6 +698,11 @@ void editorSave(void) {
   // prompt the user for a name, and use that.
   if (E.filename == NULL) {
     E.filename = editorPrompt("Save as: %s");
+    if (E.filename == NULL) {
+      // If the user exited the save as prompt with <esc>, bail out.
+      editorSetStatusMessage("Save cancelled");
+      return;
+    }
   }
 
   // Convert the editor rows to a string.
@@ -712,7 +717,7 @@ void editorSave(void) {
     // Set the file's size to the length set in editorRowstoString
     if (ftruncate(fd, len) != -1) {
       // Write the results to disk.
-      if (write(fd, buf, len) != -1) {
+      if (write(fd, buf, len) == len) {
         close(fd);
         free(buf);
         // Reset the dirty flag on every save.
@@ -994,7 +999,17 @@ char *editorPrompt(char *prompt) {
 
     // Read the user's input 1 character at a time.
     int c = editorReadKey();
-    if (c == '\r') {
+    if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      // Support backspacing.
+      if (buflen != 0) {
+        buf[--buflen] = '\0';
+      }
+    } else if (c == '\x1b') {
+      // Exit on <esc>
+      editorSetStatusMessage("");
+      free(buf);
+      return NULL;
+    } else if (c == '\r') {
       // If the user hit enter on a non-empty input, clear the status and
       // return a pointer to the input.
       if (buflen != 0) {
