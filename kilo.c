@@ -84,10 +84,14 @@ struct editorConfig {
 struct editorConfig E;
 
 /*** prototypes ***/
+
 // This prototype concept seems smelly to me, but maybe it's a C thing.
 // These allow functions to be declared/shaped now, but not defined until later
 // allowing them to be used before definition when compiling.
+
 void editorSetStatusMessage(const char *fmt, ...);
+void editorRefreshScreen(void);
+char *editorPrompt(char *prompt);
 
 /*** terminal ***/
 
@@ -691,9 +695,10 @@ void editorOpen(char *filename) {
  */
 void editorSave(void) {
   // If this is not an existing file, we don't know where to save it, so
-  // return.
-  if (E.filename == NULL)
-    return;
+  // prompt the user for a name, and use that.
+  if (E.filename == NULL) {
+    E.filename = editorPrompt("Save as: %s");
+  }
 
   // Convert the editor rows to a string.
   int len;
@@ -969,6 +974,49 @@ void editorSetStatusMessage(const char *fmt, ...) {
 
 /*** input ***/
 
+/*
+ * Display a user text prompt in the status bar.
+ * Note that *prompt should be a format string using %s.
+ */
+char *editorPrompt(char *prompt) {
+  // Allocate enough space to hold 128 user input characters in the prompt.
+  size_t bufsize = 128;
+  char *buf = malloc(bufsize);
+
+  // Initialize the input to a single EOL null byte.
+  size_t buflen = 0;
+  buf[0] = '\0';
+
+  while (1) {
+    // Print the prompt to the status bar.
+    editorSetStatusMessage(prompt, buf);
+    editorRefreshScreen();
+
+    // Read the user's input 1 character at a time.
+    int c = editorReadKey();
+    if (c == '\r') {
+      // If the user hit enter on a non-empty input, clear the status and
+      // return a pointer to the input.
+      if (buflen != 0) {
+        editorSetStatusMessage("");
+        return buf;
+      }
+    } else if (!iscntrl(c) && c < 128) {
+      // If the user is typing valid ASCII characters:
+      if (buflen == bufsize - 1) {
+        // If the user runs out of room in the buffer, double the size and
+        // reallocate it.
+        bufsize *= 2;
+        buf = realloc(buf, bufsize);
+      }
+      // Add the user's input character to the buffer and increment the
+      // length counter.
+      buf[buflen++] = c;
+      // Add an EOL null byte at the end.
+      buf[buflen] = '\0';
+    }
+  }
+}
 /*
  * Handle cursor movement options by incrementing the stored cursor positions.
  */
