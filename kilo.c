@@ -764,20 +764,51 @@ void editorSave(void) {
  * Allow users to search for a string and automatically jump to the next match
  */
 void editorFindCallback(char *query, int key) {
+  // The index of the row containing the most recent match.
+  static int last_match = -1;
+  // The direction to search,
+  // where 1 = forwards from the cursor and -1 = backwards
+  static int direction = 1;
+
   if (key == '\r' || key == '\x1b') {
+    last_match = -1;
+    direction = 1;
     return;
+  } else if (key == ARROW_RIGHT || key == ARROW_DOWN) {
+    direction = 1;
+  } else if (key == ARROW_LEFT || key == ARROW_UP) {
+    direction = -1;
+  } else {
+    last_match = -1;
+    direction = 1;
   }
+
+  if (last_match == -1)
+    direction = 1;
+  int current = last_match;
 
   // Iterate through every row in the editor.
   int i;
   for (i = 0; i < E.numrows; i++) {
-    erow *row = &E.row[i];
+    // move the "current" index forward or backward (depending on direction)
+    // and begin the search again from there
+    current += direction;
+    if (current == -1)
+      // If this is the first search case, start looking from the top.
+      current = E.numrows - 1;
+    else if (current == E.numrows)
+      // If we hit the end of the file, restart at the top.
+      current = 0;
+
+    // Search the row at the 'current' index rather than the raw loop index.
+    erow *row = &E.row[current];
 
     // Check each row to see if a match is found.
     char *match = strstr(row->render, query);
     if (match) {
       // If yes, jump to the first match instance
-      E.cy = i;
+      last_match = current;
+      E.cy = current;
       // Move the cursor horizontally to the beginning of the match
       E.cx = editorRowRxToCx(row, match - row->render);
       // Set the row offset to the bottom of the screen so that on the next
@@ -793,11 +824,24 @@ void editorFindCallback(char *query, int key) {
  * Prompt the user to perform a search and pass the input to editorFindCallback
  */
 void editorFind(void) {
-  // Prompt the user for a search string stored at *query
-  char *query = editorPrompt("Search: %s (ESC to cancel)", editorFindCallback);
+  // Save the pre-search cursor position so we can return to it on cancel.
+  int saved_cx = E.cx;
+  int saved_cy = E.cy;
+  int saved_coloff = E.coloff;
+  int saved_rowoff = E.rowoff;
 
-  if (query)
+  // Prompt the user for a search string stored at *query
+  char *query =
+      editorPrompt("Search: %s (Use ESC/Arrows/Enter)", editorFindCallback);
+
+  if (query) {
     free(query);
+  } else {
+    E.cx = saved_cx;
+    E.cy = saved_cy;
+    E.coloff = saved_coloff;
+    E.rowoff = saved_rowoff;
+  }
 }
 
 /*** append buffer ***/
@@ -879,6 +923,7 @@ void editorScroll(void) {
  * Draw a column of ~ to distinguish rows.
  * [K - Erase In Line, using default arg 0 to erase to the right of the
  * cursor.
+ * [3m - Select Graphic Rendition, using 1 for red and 9 for default.
  */
 void editorDrawRows(struct abuf *ab) {
   int y;
@@ -911,13 +956,28 @@ void editorDrawRows(struct abuf *ab) {
         abAppend(ab, "~", 1);
       }
     } else {
-      // truncate the text to the terminal window, accounting for the column
-      // offset to allow for horizontal scrolling.
+      // Print the rows as-is but truncate the text to the terminal window,
+      // accounting for the column offset to allow for horizontal scrolling.
       int len = E.row[filerow].rsize - E.coloff;
       if (len < 0)
         len = 0;
       if (len > E.screencols)
         len = E.screencols;
+
+      // store the currently visible row text in c
+      char *c = &E.row[filerow].render[E.coloff];
+      // Iterate through every character in the visible row and apply styling.
+      int j;
+      for (j = 0; j < len; j++) {
+        if (isdigit(c[j])) {
+          // Draw all digits as red.
+          abAppend(ab, "\x1b[31m", 5);
+          abAppend(ab, &c[j], 1);
+          abAppend(ab, "\x1b[39m", 5);
+        } else {
+          abAppend(ab, &c[j], 1);
+        }
+      }
       abAppend(ab, &E.row[filerow].render[E.coloff], len);
     }
 
