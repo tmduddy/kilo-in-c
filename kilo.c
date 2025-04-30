@@ -364,6 +364,31 @@ int editorRowCxToRx(erow *row, int cx) {
 }
 
 /*
+ * Calculate the correct render offset for a given cursor position
+ */
+int editorRowRxToCx(erow *row, int rx) {
+  int cur_rx = 0;
+  // Iterate through every character in the row looking for tabs
+  // because tabs take up more render space than byte space.
+  int cx;
+  for (cx = 0; cx < row->size; cx++) {
+    if (row->chars[cx] == '\t') {
+      // If we find a tab, offset the cur_rx by the appropriate amount.
+      cur_rx = (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
+    }
+    // Either way, move it forward by 1 char.
+    cur_rx++;
+
+    // If we've passed the render X we're looking from, we're done.
+    if (cur_rx > rx)
+      return cx;
+  }
+
+  // This is a safety fallback in case the provided rx is out of range.
+  return cx;
+}
+
+/*
  * Convert a buffered text row into a rendered row for display.
  */
 void editorUpdateRow(erow *row) {
@@ -731,6 +756,40 @@ void editorSave(void) {
 
   free(buf);
   editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+}
+
+/*** find ***/
+
+/*
+ * Allow users to search for a string and automatically jump to the next match
+ */
+void editorFind(void) {
+  // Prompt the user for a search string stored at *query
+  char *query = editorPrompt("Search: %s (ESC to cancel)");
+  if (query == NULL)
+    return;
+
+  // Iterate through every row in the editor.
+  int i;
+  for (i = 0; i < E.numrows; i++) {
+    erow *row = &E.row[i];
+
+    // Check each row to see if a match is found.
+    char *match = strstr(row->render, query);
+    if (match) {
+      // If yes, jump to the first match instance
+      E.cy = i;
+      // Move the cursor horizontally to the beginning of the match
+      E.cx = editorRowRxToCx(row, match - row->render);
+      // Set the row offset to the bottom of the screen so that on the next
+      // screen refresh the current cursor position is placed at the top of
+      // the screen.
+      E.rowoff = E.numrows;
+      break;
+    }
+  }
+
+  free(query);
 }
 
 /*** append buffer ***/
@@ -1124,6 +1183,10 @@ void editorProcessKeyPress(void) {
       E.cx = E.row[E.cy].size;
     break;
 
+  case CTRL_KEY('f'):
+    editorFind();
+    break;
+
   case BACKSPACE:
   case CTRL_KEY('h'):
   case DEL_KEY:
@@ -1225,7 +1288,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-q = quit");
+  editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-q = quit | Ctrl-f = find");
 
   // Loop until user exits.
   while (1) {
