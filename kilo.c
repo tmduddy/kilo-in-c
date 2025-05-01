@@ -551,11 +551,11 @@ int editorSyntaxToColor(int hl) {
     // Cyan
     return 36;
   case HL_KEYWORD1:
-    // Yellow
-    return 33;
-  case HL_KEYWORD2:
     // Green
     return 32;
+  case HL_KEYWORD2:
+    // Yellow
+    return 33;
   case HL_STRING:
     // Magenta
     return 35;
@@ -1284,7 +1284,26 @@ void editorDrawRows(struct abuf *ab) {
       // Iterate through every character in the visible row and apply styling.
       int j;
       for (j = 0; j < len; j++) {
-        if (hl[j] == HL_NORMAL) {
+        if (iscntrl(c[j])) {
+          // If we hit a non-printable character,
+          // print Alpha ctrl chars as capital letters by adding them
+          // to '@', which converts the <c-a> to A .. <c-z> to Z
+          // We'll print all other non-printables as '?'.
+          char sym = (c[j] <= 26) ? '@' + c[j] : '?';
+
+          // Invert the text color to differentiate these symbols.
+          abAppend(ab, "\x1b[7m", 4);
+          abAppend(ab, &sym, 1);
+          abAppend(ab, "\x1b[m", 3);
+
+          // The above line resets all formatting, so we need to reapply any
+          // HL present.
+          if (current_color != -1) {
+            char buf[16];
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm]", current_color);
+            abAppend(ab, buf, clen);
+          }
+        } else if (hl[j] == HL_NORMAL) {
           if (current_color != -1) {
             // Only reset text coloring if it's been applied.
             abAppend(ab, "\x1b[39m", 5);
