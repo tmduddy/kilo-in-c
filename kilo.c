@@ -57,7 +57,23 @@ enum editorKey {
  */
 enum editorHighlight { HL_NORMAL = 0, HL_NUMBER, HL_MATCH };
 
+#define HL_HIGHLIGHT_NUMBERS (1 << 0)
+
 /*** data ***/
+
+/*
+ * Hold data related to syntax highlighting.
+ * filetype is the name of the filetype to display to the user.
+ * filematch is an array of strings, where each string contains a pattern to
+ * match filenames against, where a match decides which filetype to use.
+ * flags is a bit field that will contain flags for whether to highlight
+ * numbers and whether to highlight strings for that filetype.
+ */
+struct editorSyntax {
+  char *filetype;
+  char **filematch;
+  int flags;
+};
 
 /*
  * hold a single row of editor text
@@ -84,10 +100,21 @@ struct editorConfig {
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
+  struct editorSyntax *syntax;
   struct termios orig_termios;
 };
 
 struct editorConfig E;
+
+char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
+
+// The Highlight Database maps file extensions to filetype names and rules.
+struct editorSyntax HLDB[] = {
+    {"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS},
+};
+
+// Store the length of the HLDB array.
+#define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
 /*** prototypes ***/
 
@@ -367,6 +394,10 @@ void editorUpdateSyntax(erow *row) {
   // block for the row.
   memset(row->hl, HL_NORMAL, row->rsize);
 
+  // Quit out if no syntax is defined.
+  if (E.syntax == NULL)
+    return;
+
   // store whether the preceding character for a given string is a separator.
   int prev_sep = 1;
 
@@ -377,17 +408,20 @@ void editorUpdateSyntax(erow *row) {
     char c = row->render[i];
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-    // If the current character is a digit preceded by a separator or digit,
-    // or the current character is a period preceded by a digit (decimal pt)
-    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
-        (c == '.' && prev_hl == HL_NUMBER)) {
-      // Assign HL_NUMBER to the character.
-      row->hl[i] = HL_NUMBER;
-      i++;
-      // Mark that the previous character was not a separator (because it was
-      // a digit).
-      prev_sep = 0;
-      continue;
+    // Highlight digits if enabled in E.syntax.
+    if (E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
+      // If the current character is a digit preceded by a separator or digit,
+      // or the current character is a period preceded by a digit (decimal pt)
+      if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
+          (c == '.' && prev_hl == HL_NUMBER)) {
+        // Assign HL_NUMBER to the character.
+        row->hl[i] = HL_NUMBER;
+        i++;
+        // Mark that the previous character was not a separator (because it was
+        // a digit).
+        prev_sep = 0;
+        continue;
+      }
     }
 
     // Check if the current character is a separator then continue iteration.
@@ -407,6 +441,54 @@ int editorSyntaxToColor(int hl) {
     return 34;
   default:
     return 37;
+  }
+}
+
+/*
+ * Match the current filename to one of the filematch fields and set syntax
+ * strrchr (from <string.h>) returns a pointer to the last occurrence of a
+ *   character in a string.
+ * strcmp (from <string.h>) returns 0 if 2 strings match.
+ */
+void editorSelectSyntaxHighlight(void) {
+  // Start with an empty syntax pointer and exit early if no filename is set.
+  E.syntax = NULL;
+  if (E.filename == NULL)
+    return;
+
+  // Store a pointer to the last '.' in the file name to get the extension.
+  char *ext = strrchr(E.filename, '.');
+
+  // Iterate through every entry in the HLDB.
+  for (unsigned int j = 0; j < HLDB_ENTRIES; j++) {
+    // Pull out the syntax for the current DB element.
+    struct editorSyntax *s = &HLDB[j];
+    // Iterate through every file extension in the filematch array.
+    unsigned int i = 0;
+    while (s->filematch[i]) {
+      // Validate that the array element has '.' (this is a shortcut to
+      // avoid having to store the array size and works as long as the
+      // filematch array always starts with file extensions and ends with NULL)
+      int is_ext = (s->filematch[i][0] == '.');
+      // If the filematch is an extentension, the current file name has
+      // an extension, and the extensions match:
+      // or
+      // If this is the last element of the filematch array and the filematch
+      // extension is found completely within the filename:
+      if ((is_ext && ext && !strcmp(ext, s->filematch[i])) ||
+          (!is_ext && strstr(E.filename, s->filematch[i]))) {
+        // Set the syntax rules.
+        E.syntax = s;
+
+        // Rehighlight the entire file after setting E.syntax.
+        int filerow;
+        for (filerow = 0; filerow < E.numrows; filerow++) {
+          editorUpdateSyntax(&E.row[filerow]);
+        }
+        return;
+      }
+      i++;
+    }
   }
 }
 
@@ -760,6 +842,9 @@ void editorOpen(char *filename) {
   free(E.filename);
   E.filename = strdup(filename);
 
+  // Enable syntax highlighting.
+  editorSelectSyntaxHighlight();
+
   // Open a file by name.
   FILE *fp = fopen(filename, "r");
   if (!fp) {
@@ -804,6 +889,8 @@ void editorSave(void) {
       editorSetStatusMessage("Save cancelled");
       return;
     }
+    // Recheck for syntax highlighting.
+    editorSelectSyntaxHighlight();
   }
 
   // Convert the editor rows to a string.
@@ -1123,7 +1210,9 @@ void editorDrawStatusBar(struct abuf *ab) {
   int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
                      E.filename ? E.filename : "[No Name]", E.numrows,
                      E.dirty ? "(modified)" : "");
-  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  int rlen =
+      snprintf(rstatus, sizeof(rstatus), "%s | %d/%d",
+               E.syntax ? E.syntax->filetype : "no ft", E.cy + 1, E.numrows);
   // Truncate the status to fit on the screen, just in case
   if (len > E.screencols)
     len = E.screencols;
@@ -1462,6 +1551,9 @@ void initEditor(void) {
   // Init an empty status message to show the user under the status bar.
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
+
+  // Init the syntax configuration to NULL, meaning no filetype or highlighting
+  E.syntax = NULL;
 
   // If we fail to read a screen size, exit.
   if (getWindowSize(&E.screenrows, &E.screencols) == -1)
