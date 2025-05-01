@@ -54,10 +54,14 @@ enum editorKey {
 
 /*
  * Store the possible categories of text to highlight.
+ * KW1/KW2 allow for different highlighting for different types of keywords,
+ * for example reserved keywords vs. common types in C
  */
 enum editorHighlight {
   HL_NORMAL = 0,
   HL_COMMENT,
+  HL_KEYWORD1,
+  HL_KEYWORD2,
   HL_STRING,
   HL_NUMBER,
   HL_MATCH
@@ -75,12 +79,17 @@ enum editorHighlight {
  *   match filenames against, where a match decides which filetype to use.
  * - singleline_comment_start holds the characters that denote the beginning
  *   of a comment
+ * - keywords is a NULL terminated array of strings containing all keywords
+ *   to highlight. Keyword1 vs. Keyword2 HLs will be distinguished using a |
+ *   ex: ["switch", "if", "int|", "long|"] will categorize switch and if as
+ *   KW1s and int and long as KW2s.
  * - flags is a bit field that will contain flags for whether to highlight
  *   numbers and whether to highlight strings for that filetype.
  */
 struct editorSyntax {
   char *filetype;
   char **filematch;
+  char **keywords;
   char *singleline_comment_start;
   int flags;
 };
@@ -117,10 +126,16 @@ struct editorConfig {
 struct editorConfig E;
 
 char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
+char *CL_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
+                          "continue",  "return",  "else",    "struct", "union",
+                          "typedef",   "static",  "enum",    "class",  "case",
+                          "int|",      "long|",   "double|", "float|", "char|",
+                          "unsigned|", "signed|", "void|",   NULL};
 
 // The Highlight Database maps file extensions to filetype names and rules.
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, "//", HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
+    {"c", C_HL_extensions, CL_HL_keywords, "//",
+     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
 };
 
 // Store the length of the HLDB array.
@@ -389,8 +404,9 @@ int getWindowSize(int *rows, int *cols) {
  * Return whether or not a character is a separator for syntax highlighting.
  * strchr comes from <string.h> and returns a pointer to the first matching
  *   character in a string with args `strchr(searchArea, searchTerm)`.
- * strncmp (from <string.h>) compares the first n characters of two strings
- *   and returns an integer indicating which one is greater.
+ * strncmp(s1, s2, n) (from <string.h>) compares the first n characters of
+ *   two strings and returns an integer indicating which one is greater:
+ *   -1 for s1, 1 for s2, or 0 if the two exactly match.
  */
 int is_separator(int c) {
   return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
@@ -410,7 +426,10 @@ void editorUpdateSyntax(erow *row) {
   if (E.syntax == NULL)
     return;
 
-  // Store any single line comment strings.
+  // Store all keywords to highlight from the current language config.
+  char **keywords = E.syntax->keywords;
+
+  // Store the comment prefix to look for from the current language config.
   char *scs = E.syntax->singleline_comment_start;
   int scs_len = scs ? strlen(scs) : 0;
 
@@ -429,6 +448,7 @@ void editorUpdateSyntax(erow *row) {
 
     // Highlight singleline comments
     if (scs_len && !in_string) {
+      // If the next scs_len characters of row.render match the scs string:
       if (!strncmp(&row->render[i], scs, scs_len)) {
         // Set the entire single comment row length from i-> to HL_COMMENT
         memset(&row->hl[i], HL_COMMENT, row->rsize - i);
@@ -485,6 +505,37 @@ void editorUpdateSyntax(erow *row) {
       }
     }
 
+    // Highlight Keywords (1 and 2)
+    if (prev_sep) {
+      // iterate through the array of Keywords to highlight.
+      int j;
+      for (j = 0; keywords[j]; j++) {
+        // Store the length of a given keyword.
+        int klen = strlen(keywords[j]);
+        // check if the last character is a '|', which denotes that it is
+        // a Keyword2. Otherwise, it's a Keyword1.
+        int is_kw2 = keywords[j][klen - 1] == '|';
+        // Strip the | off the end of any KW2s.
+        if (is_kw2)
+          klen--;
+
+        // If the next klen characters of row.render match the current keyword,
+        // and the character following the keyword chars is a separator:
+        if (!strncmp(&row->render[i], keywords[j], klen) &&
+            is_separator(row->render[i + klen])) {
+          // Set the next klen chars to HL_KW1/KW2
+          memset(&row->hl[i], is_kw2 ? HL_KEYWORD2 : HL_KEYWORD1, klen);
+          // Jump forward to the end of the keyword.
+          i += klen;
+          break;
+        }
+      }
+      if (keywords[j] != NULL) {
+        prev_sep = 0;
+        continue;
+      }
+    }
+
     // Check if the current character is a separator then continue iteration.
     prev_sep = is_separator(c);
     i++;
@@ -499,6 +550,12 @@ int editorSyntaxToColor(int hl) {
   case HL_COMMENT:
     // Cyan
     return 36;
+  case HL_KEYWORD1:
+    // Yellow
+    return 33;
+  case HL_KEYWORD2:
+    // Green
+    return 32;
   case HL_STRING:
     // Magenta
     return 35;
