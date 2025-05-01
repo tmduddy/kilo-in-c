@@ -349,6 +349,14 @@ int getWindowSize(int *rows, int *cols) {
 /*** syntax highlighting ***/
 
 /*
+ * Return whether or not a character is a separator for syntax highlighting.
+ * strchr comes from <string.h> and returns a pointer to the first matching
+ * character in a string with args `strchr(searchArea, searchTerm)`.
+ */
+int is_separator(int c) {
+  return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
+}
+/*
  * Categorize the contents of a given row into syntax categories
  * for highlighting.
  */
@@ -359,13 +367,32 @@ void editorUpdateSyntax(erow *row) {
   // block for the row.
   memset(row->hl, HL_NORMAL, row->rsize);
 
+  // store whether the preceding character for a given string is a separator.
+  int prev_sep = 1;
+
   // Iterate through the rendered characters in the row.
-  int i;
-  for (i = 0; i < row->rsize; i++) {
-    if (isdigit(row->render[i])) {
-      // Assign HL_NUMBER to all digits
+  // Using a while loop to allow for checking multiple characters at once.
+  int i = 0;
+  while (i < row->rsize) {
+    char c = row->render[i];
+    unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    // If the current character is a digit preceded by a separator or digit,
+    // or the current character is a period preceded by a digit (decimal pt)
+    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) ||
+        (c == '.' && prev_hl == HL_NUMBER)) {
+      // Assign HL_NUMBER to the character.
       row->hl[i] = HL_NUMBER;
+      i++;
+      // Mark that the previous character was not a separator (because it was
+      // a digit).
+      prev_sep = 0;
+      continue;
     }
+
+    // Check if the current character is a separator then continue iteration.
+    prev_sep = is_separator(c);
+    i++;
   }
 }
 
