@@ -55,7 +55,13 @@ enum editorKey {
 /*
  * Store the possible categories of text to highlight.
  */
-enum editorHighlight { HL_NORMAL = 0, HL_STRING, HL_NUMBER, HL_MATCH };
+enum editorHighlight {
+  HL_NORMAL = 0,
+  HL_COMMENT,
+  HL_STRING,
+  HL_NUMBER,
+  HL_MATCH
+};
 
 #define HL_HIGHLIGHT_NUMBERS (1 << 0)
 #define HL_HIGHLIGHT_STRINGS (1 << 1)
@@ -64,15 +70,18 @@ enum editorHighlight { HL_NORMAL = 0, HL_STRING, HL_NUMBER, HL_MATCH };
 
 /*
  * Hold data related to syntax highlighting.
- * filetype is the name of the filetype to display to the user.
- * filematch is an array of strings, where each string contains a pattern to
- * match filenames against, where a match decides which filetype to use.
- * flags is a bit field that will contain flags for whether to highlight
- * numbers and whether to highlight strings for that filetype.
+ * - filetype is the name of the filetype to display to the user.
+ * - filematch is an array of strings, where each string contains a pattern to
+ *   match filenames against, where a match decides which filetype to use.
+ * - singleline_comment_start holds the characters that denote the beginning
+ *   of a comment
+ * - flags is a bit field that will contain flags for whether to highlight
+ *   numbers and whether to highlight strings for that filetype.
  */
 struct editorSyntax {
   char *filetype;
   char **filematch;
+  char *singleline_comment_start;
   int flags;
 };
 
@@ -111,7 +120,7 @@ char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
 
 // The Highlight Database maps file extensions to filetype names and rules.
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
+    {"c", C_HL_extensions, "//", HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
 };
 
 // Store the length of the HLDB array.
@@ -379,7 +388,9 @@ int getWindowSize(int *rows, int *cols) {
 /*
  * Return whether or not a character is a separator for syntax highlighting.
  * strchr comes from <string.h> and returns a pointer to the first matching
- * character in a string with args `strchr(searchArea, searchTerm)`.
+ *   character in a string with args `strchr(searchArea, searchTerm)`.
+ * strncmp (from <string.h>) compares the first n characters of two strings
+ *   and returns an integer indicating which one is greater.
  */
 int is_separator(int c) {
   return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
@@ -399,6 +410,10 @@ void editorUpdateSyntax(erow *row) {
   if (E.syntax == NULL)
     return;
 
+  // Store any single line comment strings.
+  char *scs = E.syntax->singleline_comment_start;
+  int scs_len = scs ? strlen(scs) : 0;
+
   // Store whether the preceding character for a given string is a separator.
   int prev_sep = 1;
 
@@ -411,6 +426,15 @@ void editorUpdateSyntax(erow *row) {
   while (i < row->rsize) {
     char c = row->render[i];
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    // Highlight singleline comments
+    if (scs_len && !in_string) {
+      if (!strncmp(&row->render[i], scs, scs_len)) {
+        // Set the entire single comment row length from i-> to HL_COMMENT
+        memset(&row->hl[i], HL_COMMENT, row->rsize - i);
+        break;
+      }
+    }
 
     // Highlight strings if enabled in E.syntax
     if (E.syntax->flags & HL_HIGHLIGHT_STRINGS) {
@@ -472,6 +496,9 @@ void editorUpdateSyntax(erow *row) {
  */
 int editorSyntaxToColor(int hl) {
   switch (hl) {
+  case HL_COMMENT:
+    // Cyan
+    return 36;
   case HL_STRING:
     // Magenta
     return 35;
