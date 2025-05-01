@@ -55,9 +55,10 @@ enum editorKey {
 /*
  * Store the possible categories of text to highlight.
  */
-enum editorHighlight { HL_NORMAL = 0, HL_NUMBER, HL_MATCH };
+enum editorHighlight { HL_NORMAL = 0, HL_STRING, HL_NUMBER, HL_MATCH };
 
 #define HL_HIGHLIGHT_NUMBERS (1 << 0)
+#define HL_HIGHLIGHT_STRINGS (1 << 1)
 
 /*** data ***/
 
@@ -110,7 +111,7 @@ char *C_HL_extensions[] = {".c", ".h", ".cpp", NULL};
 
 // The Highlight Database maps file extensions to filetype names and rules.
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS},
+    {"c", C_HL_extensions, HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
 };
 
 // Store the length of the HLDB array.
@@ -398,8 +399,11 @@ void editorUpdateSyntax(erow *row) {
   if (E.syntax == NULL)
     return;
 
-  // store whether the preceding character for a given string is a separator.
+  // Store whether the preceding character for a given string is a separator.
   int prev_sep = 1;
+
+  // Store whether the character is currently inside of a string.
+  int in_string = 0;
 
   // Iterate through the rendered characters in the row.
   // Using a while loop to allow for checking multiple characters at once.
@@ -407,6 +411,39 @@ void editorUpdateSyntax(erow *row) {
   while (i < row->rsize) {
     char c = row->render[i];
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    // Highlight strings if enabled in E.syntax
+    if (E.syntax->flags & HL_HIGHLIGHT_STRINGS) {
+      if (in_string) {
+        // If we're already in a string, just keep highlighting.
+        // Set the HL for the current character to HL_STRING.
+        row->hl[i] = HL_STRING;
+        // Account for escaped quotes, which should not end the string.
+        if (c == '\\' && i + 1 < row->rsize) {
+          // Set the next char to HL_STRING
+          row->hl[i + 1] = HL_STRING;
+          // Skip over the next char, we already handled it.
+          i += 2;
+          continue;
+        }
+        // If c is a closing quotation (see else), stop HL.
+        if (c == in_string)
+          in_string = 0;
+        i++;
+        // Mark that the previous character was not a separator (because it was
+        // a string).
+        prev_sep = 1;
+        continue;
+      } else {
+        // If we hit a closing quotation mark, stop highlighting after this one
+        if (c == '"' || c == '\'') {
+          in_string = c;
+          row->hl[i] = HL_STRING;
+          i++;
+          continue;
+        }
+      }
+    }
 
     // Highlight digits if enabled in E.syntax.
     if (E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
@@ -435,11 +472,17 @@ void editorUpdateSyntax(erow *row) {
  */
 int editorSyntaxToColor(int hl) {
   switch (hl) {
+  case HL_STRING:
+    // Magenta
+    return 35;
   case HL_NUMBER:
+    // Red
     return 31;
   case HL_MATCH:
+    // Blue
     return 34;
   default:
+    // White
     return 37;
   }
 }
