@@ -60,6 +60,7 @@ enum editorKey {
 enum editorHighlight {
   HL_NORMAL = 0,
   HL_COMMENT,
+  HL_MLCOMMENT,
   HL_KEYWORD1,
   HL_KEYWORD2,
   HL_STRING,
@@ -91,6 +92,8 @@ struct editorSyntax {
   char **filematch;
   char **keywords;
   char *singleline_comment_start;
+  char *multiline_comment_start;
+  char *multiline_comment_end;
   int flags;
 };
 
@@ -98,11 +101,13 @@ struct editorSyntax {
  * hold a single row of editor text
  */
 typedef struct erow {
+  int idx;
   int size;
   int rsize;
   char *chars;
   char *render;
   unsigned char *hl;
+  int hl_open_comment;
 } erow;
 
 struct editorConfig {
@@ -134,7 +139,7 @@ char *CL_HL_keywords[] = {"switch",    "if",      "while",   "for",    "break",
 
 // The Highlight Database maps file extensions to filetype names and rules.
 struct editorSyntax HLDB[] = {
-    {"c", C_HL_extensions, CL_HL_keywords, "//",
+    {"c", C_HL_extensions, CL_HL_keywords, "//", "/*", "*/",
      HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS},
 };
 
@@ -433,11 +438,21 @@ void editorUpdateSyntax(erow *row) {
   char *scs = E.syntax->singleline_comment_start;
   int scs_len = scs ? strlen(scs) : 0;
 
+  // Store the multiline-comment prefix and end chars
+  char *mcs = E.syntax->multiline_comment_start;
+  char *mce = E.syntax->multiline_comment_end;
+
+  int mcs_len = mcs ? strlen(mcs) : 0;
+  int mce_len = mce ? strlen(mce) : 0;
+
   // Store whether the preceding character for a given string is a separator.
   int prev_sep = 1;
 
   // Store whether the character is currently inside of a string.
   int in_string = 0;
+
+  // Store whether the character is currently inside of a multiline comment.
+  int in_comment = (row->idx > 0 && E.row[row->idx - 1].hl_open_comment);
 
   // Iterate through the rendered characters in the row.
   // Using a while loop to allow for checking multiple characters at once.
@@ -447,12 +462,45 @@ void editorUpdateSyntax(erow *row) {
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
     // Highlight singleline comments
-    if (scs_len && !in_string) {
+    // ...as long as the start string is defined, and we're not already
+    // in a string or a multiline comment.
+    if (scs_len && !in_string && !in_comment) {
       // If the next scs_len characters of row.render match the scs string:
       if (!strncmp(&row->render[i], scs, scs_len)) {
         // Set the entire single comment row length from i-> to HL_COMMENT
         memset(&row->hl[i], HL_COMMENT, row->rsize - i);
         break;
+      }
+    }
+
+    // Highlight multiine comments
+    // ...as long as start and end strings are defined and we're not already
+    // in a string.
+    if (mcs_len && mce_len && !in_string) {
+      if (in_comment) {
+        // If we're already in a comment, highlight the current character.
+        row->hl[i] = HL_MLCOMMENT;
+        if (!strncmp(&row->render[i], mce, mce_len)) {
+          // If the next mce_len characters are the end of an ML comment,
+          // highlight them too, and skip forward mce_len chars, and declare
+          // that we're no longer in a comment.
+          memset(&row->hl[i], HL_MLCOMMENT, mce_len);
+          i += mce_len;
+          in_comment = 0;
+          prev_sep = 1;
+          continue;
+        } else {
+          i++;
+          continue;
+        }
+      } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
+        // If the next mcs_len characters are the start of a comment,
+        // highlight them, jump over them, and declare that we are now in a
+        // comment.
+        memset(&row->hl[i], HL_MLCOMMENT, mcs_len);
+        i += mcs_len;
+        in_comment = 1;
+        continue;
       }
     }
 
@@ -540,6 +588,15 @@ void editorUpdateSyntax(erow *row) {
     prev_sep = is_separator(c);
     i++;
   }
+
+  // Check if the multiline comment status changed on this row.
+  int changed = (row->hl_open_comment != in_comment);
+  row->hl_open_comment = in_comment;
+  // If it did, and there is a row after this one, call update syntax on it
+  // recursively until one of them is unchanged.
+  if (changed && row->idx + 1 < E.numrows) {
+    editorUpdateSyntax(&row[row->idx + 1]);
+  }
 }
 
 /*
@@ -548,6 +605,7 @@ void editorUpdateSyntax(erow *row) {
 int editorSyntaxToColor(int hl) {
   switch (hl) {
   case HL_COMMENT:
+  case HL_MLCOMMENT:
     // Cyan
     return 36;
   case HL_KEYWORD1:
@@ -722,6 +780,15 @@ void editorInsertRow(int at, char *s, size_t len) {
   // Make room at the specified index for the new row
   memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
 
+  // Adjust the index of all following rows whenever a row is added.
+  for (int j = at + 1; j <= E.numrows; j++) {
+    E.row[j].idx++;
+  }
+
+  // Store the row's index so it always knows where it is (and where its
+  // neighbors are).
+  E.row[at].idx = at;
+
   // Define the length of the row to add and store a pointer to
   // the next free large enough memory address.
   E.row[at].size = len;
@@ -737,6 +804,8 @@ void editorInsertRow(int at, char *s, size_t len) {
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
   E.row[at].hl = NULL;
+  E.row[at].hl_open_comment = 0;
+
   // pass the mem address of the current row's start position.
   editorUpdateRow(&E.row[at]);
 
@@ -767,6 +836,11 @@ void editorDelRow(int at) {
   // Shift all following rows into the memory previously occupied by the row
   // to delete.
   memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+
+  // Decrement the index of all following rows when a row is deleted.
+  for (int j = at; j < E.numrows - 1; j++) {
+    E.row[j].idx--;
+  }
 
   E.numrows--;
   E.dirty++;
