@@ -1685,30 +1685,24 @@ void editorProcessCommand(char *command) {
     return;
   }
 
-  int c = editorReadKey();
-  // Cancel command mode if the user hits <esc>
-  if (c == '\x1b') {
-    E.mode = MODE_NORMAL;
-    return;
-  }
-
-  if (strcmp(command, "wq")) {
+  if (strcmp(command, "wq") == 0) {
     // :wq - save and quit
     if (E.dirty) {
       editorSave();
     }
     editorQuit();
-  } else if (strcmp(command, "w")) {
+  } else if (strcmp(command, "w") == 0) {
     // :w - save
     editorSave();
-  } else if (strcmp(command, "q")) {
+  } else if (strcmp(command, "q") == 0) {
     // :q - quit if there are no pending changes
     if (E.dirty) {
       editorSetStatusMessage("WARNING!!! File has unsaved changes. "
                              "Use :q! to quit without saving");
+    } else {
+      editorQuit();
     }
-    editorQuit();
-  } else if (strcmp(command, "q!")) {
+  } else if (strcmp(command, "q!") == 0) {
     // :q! - quit regardless
     editorQuit();
   }
