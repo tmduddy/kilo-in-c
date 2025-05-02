@@ -35,6 +35,8 @@
 
 #define KILO_TAB_STOP 8
 
+#define KILO_ROW_NUMBER_DIGITS 5;
+
 #define KILO_QUIT_TIMES 3
 
 // Enum to map ints to key names.
@@ -693,6 +695,9 @@ void editorSelectSyntaxHighlight(void) {
  */
 int editorRowCxToRx(erow *row, int cx) {
   int rx = 0;
+  // Offset
+  rx += KILO_ROW_NUMBER_DIGITS;
+  rx += 1;
   int j;
   for (j = 0; j < cx; j++) {
     // Offset X position by tab stop
@@ -1376,6 +1381,15 @@ void editorDrawRows(struct abuf *ab) {
 
       int current_color = -1;
 
+      // Add a row number to the left hand side of every row.
+      const int row_number_digits = KILO_ROW_NUMBER_DIGITS;
+
+      char rowNumber[row_number_digits + 2] = "       ";
+      snprintf(rowNumber, row_number_digits, "%d", E.row[filerow].idx + 1);
+      abAppend(ab, "\x1b[90m", 5);
+      abAppend(ab, rowNumber, row_number_digits + 2);
+      abAppend(ab, "\x1b[m", 3);
+
       // Iterate through every character in the visible row and apply styling.
       int j;
       for (j = 0; j < len; j++) {
@@ -1448,7 +1462,8 @@ void editorDrawStatusBar(struct abuf *ab) {
   // Add the current line number, right aligned
   char rstatus[80];
 
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+  int len = snprintf(status, sizeof(status), "--%s-- | %.20s - %d lines %s",
+                     E.mode == MODE_INSERT ? "INSERT" : "NORMAL",
                      E.filename ? E.filename : "[No Name]", E.numrows,
                      E.dirty ? "(modified)" : "");
   int rlen =
@@ -1877,7 +1892,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-s = save | Ctrl-q = quit | Ctrl-f = find");
+  editorSetStatusMessage("HELP: :w = save | :q = quit | / = find");
 
   // Loop until user exits.
   while (1) {
