@@ -80,6 +80,7 @@ Note: some of these things may be coming later on in the tutorial, but I'm listi
 - [ ] config file support
 - [ ] use different makefile command for prod with fewer flags 
 - [ ] refactor out into different sections
+- [ ] line numbers
 
 
 ## Some musings on learnings
