@@ -49,7 +49,8 @@ enum editorKey {
   HOME_KEY,
   END_KEY,
   PAGE_UP,
-  PAGE_DOWN
+  PAGE_DOWN,
+  COLON,
 };
 
 /*
@@ -110,7 +111,13 @@ typedef struct erow {
   int hl_open_comment;
 } erow;
 
+/*
+ * Store the different modes for the editor
+ */
+enum modes { MODE_NORMAL = 0, MODE_INSERT, MODE_COMMAND };
+
 struct editorConfig {
+  enum modes mode;
   int cx;
   int cy;
   int rx;
@@ -1124,6 +1131,18 @@ void editorSave(void) {
   editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
+/*
+ * Clear the screen and successfully close the editor
+ */
+void editorQuit(void) {
+  // Clear the screen.
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  // Exit with success code.
+  exit(0);
+}
+
 /*** find ***/
 
 /*
@@ -1642,111 +1661,175 @@ void editorMoveCursor(int key) {
 }
 
 /*
+ * Checks the command passed after a colon to command mode.
+ * Intended to be called as a callback:
+ *   editorPrompt(cmd, editorProcessCommand);
+ */
+void editorProcessCommand(char *command) {
+  if (E.mode != MODE_COMMAND) {
+    return;
+  }
+
+  int c = editorReadKey();
+  // Cancel command mode if the user hits <esc>
+  if (c == '\x1b') {
+    E.mode = MODE_NORMAL;
+    return;
+  }
+
+  if (strcmp(command, "wq")) {
+    // :wq - save and quit
+    if (E.dirty) {
+      editorSave();
+    }
+    editorQuit();
+  } else if (strcmp(command, "w")) {
+    // :w - save
+    editorSave();
+  } else if (strcmp(command, "q")) {
+    // :q - quit if there are no pending changes
+    if (E.dirty) {
+      editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+                             "Use :q! to quit without saving");
+    }
+    editorQuit();
+  } else if (strcmp(command, "q!")) {
+    // :q! - quit regardless
+    editorQuit();
+  }
+
+  E.mode = MODE_NORMAL;
+}
+
+/*
  * Checks the most recently pressed key against special handling cases
  */
 void editorProcessKeyPress(void) {
-  static int quit_times = KILO_QUIT_TIMES;
-
   int c = editorReadKey();
 
-  switch (c) {
-  case '\r':
-    editorInsertNewline();
-    break;
+  if (E.mode == MODE_INSERT) {
+    switch (c) {
+    case '\r':
+      editorInsertNewline();
+      break;
 
-  // Quit out with <c-q>
-  case CTRL_KEY('q'):
-    // Require multiple <c-q> hits to exit with pending changes
-    if (E.dirty && quit_times > 0) {
-      editorSetStatusMessage("WARNING!!! File has unsaved changes. "
-                             "Press ctrl-q %d more times to quit.",
-                             quit_times);
-      quit_times--;
-      return;
+    // Support line beginning / end scrolling.
+    case HOME_KEY:
+      E.cx = 0;
+      break;
+    case END_KEY:
+      if (E.cy < E.numrows)
+        E.cx = E.row[E.cy].size;
+      break;
+
+    case BACKSPACE:
+    case CTRL_KEY('h'):
+    case DEL_KEY:
+      // allow deleting "backwards" with DEL
+      if (c == DEL_KEY)
+        editorMoveCursor(ARROW_RIGHT);
+      editorDelChar();
+      break;
+
+    // Support full page scrolling.
+    case PAGE_UP:
+    case PAGE_DOWN: {
+      // Why are we doing these conditional checks in a switch? Ew.
+      if (c == PAGE_UP) {
+        // Scroll to the top of the page.
+        E.cy = E.rowoff;
+      } else if (c == PAGE_DOWN) {
+        // Scroll to the bottom of the page and place the cursor at the bottom.
+        E.cy = E.rowoff + E.screenrows - 1;
+        if (E.cy > E.numrows)
+          // If that would put us outside of the file, place us 1 line after the
+          // end of the file instead.
+          E.cy = E.numrows;
+      }
+
+      int times = E.screenrows;
+      while (times--) {
+        editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      }
+    } break;
+
+    // Map our custom Arrow Key inputs to movement.
+    case ARROW_UP:
+    case ARROW_LEFT:
+    case ARROW_DOWN:
+    case ARROW_RIGHT:
+      editorMoveCursor(c);
+      break;
+
+    // Handle <c-l> and <esc> as return to Normal mode.
+    case CTRL_KEY('l'):
+    case '\x1b':
+      E.mode = MODE_NORMAL;
+      break;
+
+    default:
+      // Any non-special-case char should be inserted into the editor row.
+      editorInsertChar(c);
+      break;
     }
-    // Clear the screen.
-    write(STDOUT_FILENO, "\x1b[2J", 4);
-    write(STDOUT_FILENO, "\x1b[H", 3);
-
-    // Exit with success code.
-    exit(0);
-    break;
-
-  // Save to disk with <c-s>
-  case CTRL_KEY('s'):
-    editorSave();
-    break;
-
-  // Support line beginning / end scrolling.
-  case HOME_KEY:
-    E.cx = 0;
-    break;
-  case END_KEY:
-    if (E.cy < E.numrows)
-      E.cx = E.row[E.cy].size;
-    break;
-
-  case CTRL_KEY('f'):
-    editorFind();
-    break;
-
-  case BACKSPACE:
-  case CTRL_KEY('h'):
-  case DEL_KEY:
-    // allow deleting "backwards" with DEL
-    if (c == DEL_KEY)
+  } else if (E.mode == MODE_NORMAL) {
+    char *command;
+    switch (c) {
+    // Switch to Insert mode on i
+    case 'i':
+      E.mode = MODE_INSERT;
+      break;
+    // Switch to command mode on :
+    case ':':
+      command = editorPrompt(":%s", NULL);
+      if (command) {
+        E.mode = MODE_COMMAND;
+        editorProcessCommand(command);
+      }
+      break;
+      // Map h,j,k,l inputs to movement.
+    case 'k':
+      editorMoveCursor(ARROW_UP);
+      break;
+    case 'h':
+      editorMoveCursor(ARROW_LEFT);
+      break;
+    case 'j':
+      editorMoveCursor(ARROW_DOWN);
+      break;
+    case 'l':
       editorMoveCursor(ARROW_RIGHT);
-    editorDelChar();
-    break;
-
-  // Support full page scrolling.
-  case PAGE_UP:
-  case PAGE_DOWN: {
-    // Why are we doing these conditional checks in a switch? Ew.
-    if (c == PAGE_UP) {
-      // Scroll to the top of the page.
-      E.cy = E.rowoff;
-    } else if (c == PAGE_DOWN) {
+      break;
+    case '/':
+      editorFind();
+      break;
+    // Support full file scrolling.
+    case 'g':
+      E.cy = 0;
+      break;
+    case 'G':
       // Scroll to the bottom of the page and place the cursor at the bottom.
-      E.cy = E.rowoff + E.screenrows - 1;
-      if (E.cy > E.numrows)
-        // If that would put us outside of the file, place us 1 line after the
-        // end of the file instead.
-        E.cy = E.numrows;
+      E.cy = E.numrows;
+      break;
+
+    // Support line beginning / end scrolling.
+    case '0':
+      E.cx = 0;
+      break;
+    case '^':
+      if (E.cy < E.numrows)
+        E.cx = E.row[E.cy].size;
+      break;
     }
-
-    int times = E.screenrows;
-    while (times--) {
-      editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-    }
-  } break;
-
-  // Map our custom Arrow Key inputs to movement.
-  case ARROW_UP:
-  case ARROW_LEFT:
-  case ARROW_DOWN:
-  case ARROW_RIGHT:
-    editorMoveCursor(c);
-    break;
-
-  // Handle <c-l> and <esc> as null operations.
-  case CTRL_KEY('l'):
-  case '\x1b':
-    break;
-
-  default:
-    // Any non-special-case char should be inserted into the editor row.
-    editorInsertChar(c);
-    break;
   }
-
-  // Reset quit_times if the user does anything other than quit.
-  quit_times = KILO_QUIT_TIMES;
 }
 
 /*** init ***/
 
 void initEditor(void) {
+  // Set the mode to NORMAL to start;
+  E.mode = MODE_NORMAL;
+
   // Set the cursor position to (0, 0).
   E.cx = 0;
   E.cy = 0;
